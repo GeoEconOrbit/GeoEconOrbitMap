@@ -65,6 +65,7 @@ import {
 // Types & Components
 import { NewsItem, Aircraft, ChatMessage } from './types';
 import { getShipIcon, getSatelliteIcon } from './lib/icons';
+import { renderStaticLayers } from './lib/mapStaticLayers';
 import { LayerSection } from './components/LayerSection';
 import { TacticalOverlay } from './components/TacticalOverlay';
 import { CountryDetailPanel } from './components/CountryDetailPanel';
@@ -275,7 +276,7 @@ export default function App() {
     };
 
     // Static Layers
-    renderStaticLayers();
+    renderStaticLayersFn();
 
     // Country GeoJSON
     fetch('https://raw.githubusercontent.com/datasets/geo-boundaries-world-110m/master/countries.geojson')
@@ -391,381 +392,14 @@ export default function App() {
   // Re-render layers when theme changes
   useEffect(() => {
     if (!mapRef.current) return;
-    renderStaticLayers();
+    renderStaticLayersFn();
     fetchNews();
     fetchAircraft();
     updateLiveShips();
   }, [iconTheme]);
 
-  const renderStaticLayers = () => {
-    const layers = layersRef.current;
-    Object.values(layers).forEach((l: any) => {
-      if (l && typeof l.clearLayers === 'function') l.clearLayers();
-    });
-
-    // Warships
-    SHIPS.forEach(ship => {
-      const heading = (ship as any).heading || 0;
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: iconTheme === 'emoji' 
-          ? `<div class="text-lg drop-shadow-[0_0_5px_rgba(0,212,255,0.5)]">🛳️</div>`
-          : `<div class="w-7 h-7 text-luxury-gold drop-shadow-[0_0_5px_rgba(212,175,55,0.3)]" style="transform: rotate(${heading}deg)">
-              ${getShipIcon(ship.t, '#d4af37')}
-            </div>`,
-        iconSize: [28, 28]
-      });
-      L.marker([ship.p[1], ship.p[0]], { icon })
-        .bindPopup(`
-          <div class="p-2">
-            ${ship.img ? `<img src="${ship.img}" class="w-full h-32 object-cover mb-2 rounded" referrerPolicy="no-referrer">` : ''}
-            <div class="flex items-center gap-2 mb-1">
-              <span class="text-xl">${ship.f}</span>
-              <h3 class="font-bold text-intel-gold">${ship.n}</h3>
-            </div>
-            <p class="text-xs opacity-80 mb-1">${ship.t}</p>
-            <p class="text-sm">${ship.d}</p>
-          </div>
-        `)
-        .addTo(layers.warships);
-    });
-
-    // Bases
-    MILITARY_BASES.forEach(base => {
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: iconTheme === 'emoji'
-          ? `<div class="text-lg drop-shadow-[0_0_5px_rgba(239,64,76,0.6)]">🛡️</div>`
-          : iconTheme === 'tactical'
-            ? `<div class="w-2.5 h-2.5 bg-red-500 border border-white rounded-sm"></div>`
-            : `<div class="w-1.5 h-1.5 border border-luxury-gold bg-luxury-gold/50 rotate-45"></div>`,
-        iconSize: [20, 20]
-      });
-      L.marker([base.p[1], base.p[0]], { icon })
-        .bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold text-intel-gold">${base.n}</h3>
-            <p class="text-xs opacity-80 mb-1">${base.co} | ${base.t}</p>
-            <p class="text-sm">${base.d}</p>
-          </div>
-        `)
-        .addTo(layers.bases);
-    });
-
-    // Chokepoints
-    CHOKEPOINTS.forEach(cp => {
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div class="text-lg drop-shadow-[0_0_5px_rgba(255,0,0,0.4)] animate-pulse">🚩</div>`,
-        iconSize: [24, 24]
-      });
-      L.marker([cp.coords[1], cp.coords[0]], { icon })
-        .bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold text-red-500 mb-1">${cp.name}</h3>
-            <p class="text-xs opacity-80">${cp.desc}</p>
-            <div class="mt-2 text-[8px] uppercase tracking-widest text-red-500/60">Status: Critical Monitoring</div>
-          </div>
-        `)
-        .addTo(layers.chokepoints);
-    });
-
-    // Pipelines
-    PIPELINES.forEach(pipe => {
-      const latlngs = pipe.path.map(p => [p[1], p[0]] as [number, number]);
-      L.polyline(latlngs, {
-        color: pipe.status === 'SABOTAGED' ? '#ef4444' : '#f59e0b',
-        weight: 3,
-        dashArray: pipe.status === 'SABOTAGED' ? '5, 10' : '10, 10',
-        opacity: 0.8,
-        className: pipe.status === 'SABOTAGED' ? 'sabotaged-pipe' : 'active-pipe'
-      }).addTo(layers.pipelines);
-
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div class="text-xl drop-shadow-[0_0_5px_rgba(245,158,11,0.5)]">⛽</div>`,
-        iconSize: [24, 24]
-      });
-      L.marker([pipe.coords[1], pipe.coords[0]], { icon })
-        .bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold text-amber-500 mb-1">${pipe.name}</h3>
-            <p class="text-xs uppercase tracking-widest ${pipe.status === 'SABOTAGED' ? 'text-red-500' : 'text-green-500'}">${pipe.status}</p>
-          </div>
-        `)
-        .addTo(layers.pipelines);
-    });
-
-    // Oil Fields
-    COMMODITIES.OIL.forEach(field => {
-      if (field.poly) {
-        L.polygon(field.poly.map(p => [p[1], p[0]] as [number, number]), {
-          color: '#f59e0b',
-          fillColor: '#f59e0b',
-          fillOpacity: 0.1,
-          weight: 1,
-          dashArray: '3, 3'
-        }).addTo(layers.oil);
-      }
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div class="text-lg drop-shadow-[0_0_5px_rgba(245,158,11,0.4)]" style="font-size: ${10 + field.v}px">🛢️</div>`,
-        iconSize: [24, 24]
-      });
-      L.marker([field.coords[1], field.coords[0]], { icon })
-        .bindPopup(`<h3 class="font-bold text-amber-500">${field.name}</h3><p class="text-xs">Capacity Index: ${field.v}</p>`)
-        .addTo(layers.oil);
-    });
-
-    // Wheat
-    COMMODITIES.WHEAT.forEach(field => {
-      if (field.poly) {
-        L.polygon(field.poly.map(p => [p[1], p[0]] as [number, number]), {
-          color: '#e9c349',
-          fillColor: '#e9c349',
-          fillOpacity: 0.2,
-          weight: 1
-        }).addTo(layers.wheat);
-      }
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div class="text-xl" style="font-size: ${10 + field.v}px">🌾</div>`,
-        iconSize: [24, 24]
-      });
-      L.marker([field.coords[1], field.coords[0]], { icon }).addTo(layers.wheat);
-    });
-
-    // Routes
-    ROUTES.SHIPPING.forEach(route => {
-      L.polyline(route.path.map(p => [p[1], p[0]] as [number, number]), {
-        color: '#00d4ff',
-        weight: 2,
-        dashArray: '5, 10',
-        opacity: 0.5
-      }).addTo(layers.routes);
-    });
-
-    // Connections (Arcs)
-    CONNECTIONS.forEach(conn => {
-      const start = [conn.from[1], conn.from[0]] as [number, number];
-      const end = [conn.to[1], conn.to[0]] as [number, number];
-      
-      // Calculate control point for quadratic bezier curve
-      const midLat = (start[0] + end[0]) / 2 + (end[1] - start[1]) * 0.2;
-      const midLng = (start[1] + end[1]) / 2 + (start[0] - end[0]) * 0.2;
-      
-      // Create a curved path using SVG path string
-      const curvePoints: [number, number][] = [];
-      for (let t = 0; t <= 1; t += 0.05) {
-        const lat = (1 - t) * (1 - t) * start[0] + 2 * (1 - t) * t * midLat + t * t * end[0];
-        const lng = (1 - t) * (1 - t) * start[1] + 2 * (1 - t) * t * midLng + t * t * end[1];
-        curvePoints.push([lat, lng]);
-      }
-
-      L.polyline(curvePoints, {
-        color: conn.type === 'Energy' ? '#ff8800' : 
-               conn.type === 'Military' ? '#ef404c' : 
-               conn.type === 'Trade' ? '#00d4ff' : '#e9c349',
-        weight: conn.weight / 3,
-        opacity: 0.4,
-        smoothFactor: 2,
-        className: 'animated-arc'
-      }).addTo(layers.connections);
-    });
-
-    // Resources
-    COUNTRY_RESOURCES.forEach(res => {
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `
-          <div class="flex items-center gap-1 bg-navy-deep/80 border border-intel-gold/30 px-2 py-0.5 rounded-full text-[9px] whitespace-nowrap">
-            <span>${res.emoji}</span>
-            <span class="font-bold">${res.label}</span>
-          </div>
-        `,
-        iconSize: [80, 20]
-      });
-      L.marker([res.coords[1], res.coords[0]], { icon }).addTo(layers.resources);
-    });
-
-    // Ideology
-    POLITICAL_IDEOLOGY.forEach(pol => {
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `
-          <div class="flex items-center gap-1 bg-navy-deep/80 border border-intel-gold/30 px-2 py-0.5 rounded-full text-[9px] whitespace-nowrap">
-            <div class="w-1.5 h-1.5 rounded-full" style="background: ${pol.color}"></div>
-            <span class="font-bold">${pol.label}</span>
-          </div>
-        `,
-        iconSize: [80, 20]
-      });
-      L.marker([pol.coords[1], pol.coords[0]], { icon })
-        .bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold text-intel-gold">${pol.name}</h3>
-            <p class="text-xs opacity-80 mb-1">${pol.leader} | ${pol.ideology}</p>
-          </div>
-        `)
-        .addTo(layers.ideology);
-    });
-
-    // Nuclear Sites
-    NUCLEAR_SITES.forEach(site => {
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div class="text-2xl drop-shadow-[0_0_8px_rgba(255,255,0,0.8)]">☢️</div>`,
-        iconSize: [32, 32]
-      });
-      
-      const marker = L.marker([site.p[1], site.p[0]], { icon })
-        .bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold text-yellow-400 mb-1">${site.name}</h3>
-            <p class="text-xs opacity-80 mb-1">${site.co} | ${site.t}</p>
-            <p class="text-sm">${site.d}</p>
-            ${site.r > 0 ? `<p class="text-[10px] mt-2 text-yellow-400/60 uppercase tracking-widest">Strike Radius: ${site.r}km</p>` : ''}
-          </div>
-        `)
-        .addTo(layers.nuclear);
-
-      if (site.r > 0) {
-        L.circle([site.p[1], site.p[0]], {
-          radius: site.r * 1000,
-          color: '#e9c349',
-          weight: 1,
-          fillOpacity: 0.05,
-          dashArray: '5, 5'
-        }).addTo(layers.nuclear);
-      }
-    });
-
-    // Cyber Attacks
-    CYBER_ATTACKS.forEach(attack => {
-      const start = [attack.from[1], attack.from[0]] as [number, number];
-      const end = [attack.to[1], attack.to[0]] as [number, number];
-      
-      const midLat = (start[0] + end[0]) / 2 + (end[1] - start[1]) * 0.1;
-      const midLng = (start[1] + end[1]) / 2 + (start[0] - end[0]) * 0.1;
-      
-      const curvePoints: [number, number][] = [];
-      for (let t = 0; t <= 1; t += 0.05) {
-        const lat = (1 - t) * (1 - t) * start[0] + 2 * (1 - t) * t * midLat + t * t * end[0];
-        const lng = (1 - t) * (1 - t) * start[1] + 2 * (1 - t) * t * midLng + t * t * end[1];
-        curvePoints.push([lat, lng]);
-      }
-
-      L.polyline(curvePoints, {
-        color: '#00ff00',
-        weight: 2,
-        opacity: 0.6,
-        className: 'animated-arc'
-      }).addTo(layers.cyber);
-
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div class="text-xl animate-pulse">👾</div>`,
-        iconSize: [24, 24]
-      });
-      L.marker(end, { icon })
-        .bindPopup(`
-          <div class="p-2 cyber-glitch">
-            <h3 class="font-bold text-green-400 mb-1">CYBER_INTRUSION: ${attack.label}</h3>
-            <p class="text-xs opacity-80">Type: ${attack.type}</p>
-            <p class="text-xs opacity-80">Intensity: ${(attack.intensity * 100).toFixed(0)}%</p>
-          </div>
-        `)
-        .addTo(layers.cyber);
-    });
-
-    // Satellites
-    SATELLITES.forEach((sat, i) => {
-      // Offset position slightly to simulate orbit movement
-      const offset = (Date.now() / 10000 + i) % (Math.PI * 2);
-      const lat = 40 * Math.sin(offset);
-      const lng = 180 * Math.cos(offset / 2);
-
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `
-          <div class="relative satellite-icon">
-            <div class="w-6 h-6 text-cyan-400 drop-shadow-[0_0_5px_rgba(0,212,255,0.8)]">
-              ${getSatelliteIcon(sat.type, '#22d3ee')}
-            </div>
-            <div class="absolute -inset-2 border border-cyan-400/20 rounded-full animate-ping"></div>
-          </div>
-        `,
-        iconSize: [24, 24]
-      });
-      
-      L.marker([lat, lng], { icon })
-        .bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold text-cyan-400 mb-1">${sat.name}</h3>
-            <p class="text-xs opacity-80">${sat.co} | ${sat.type}</p>
-            <p class="text-[10px] opacity-40 mt-1">ALT: ${sat.alt}KM | ORBIT: ${sat.orbit}</p>
-          </div>
-        `)
-        .addTo(layers.satellites);
-    });
-
-    // Undersea Cables
-    UNDERSEA_CABLES.forEach(cable => {
-      const start = [cable.from[1], cable.from[0]] as [number, number];
-      const end = [cable.to[1], cable.to[0]] as [number, number];
-      
-      L.polyline([start, end], {
-        color: '#00d4ff',
-        weight: 1.5,
-        opacity: 0.4,
-        dashArray: '5, 5'
-      }).addTo(layers.cables);
-
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div class="text-[10px] bg-cyan-500/20 border border-cyan-500/40 px-1 rounded text-cyan-200">${cable.name}</div>`,
-        iconSize: [40, 15]
-      });
-      L.marker([(start[0] + end[0]) / 2, (start[1] + end[1]) / 2], { icon })
-        .bindPopup(`<h3 class="font-bold text-cyan-400">${cable.name}</h3><p class="text-xs">Capacity: ${cable.cap}</p><p class="text-[10px] opacity-60">${cable.label}</p>`)
-        .addTo(layers.cables);
-    });
-
-    // Semiconductor Fabs
-    SEMICONDUCTOR_FABS.forEach(fab => {
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div class="text-2xl drop-shadow-[0_0_8px_rgba(0,255,255,0.8)]">📟</div>`,
-        iconSize: [32, 32]
-      });
-      L.marker([fab.p[1], fab.p[0]], { icon })
-        .bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold text-cyan-400 mb-1">${fab.name}</h3>
-            <p class="text-xs opacity-80 mb-1">${fab.co} | ${fab.t}</p>
-            <p class="text-sm">${fab.d}</p>
-          </div>
-        `)
-        .addTo(layers.fabs);
-    });
-
-    // Space Centers
-    SPACE_CENTERS.forEach(center => {
-      const icon = L.divIcon({
-        className: 'custom-div-icon',
-        html: `<div class="text-2xl drop-shadow-[0_0_8px_rgba(255,100,0,0.8)]">🚀</div>`,
-        iconSize: [32, 32]
-      });
-      L.marker([center.p[1], center.p[0]], { icon })
-        .bindPopup(`
-          <div class="p-2">
-            <h3 class="font-bold text-orange-400 mb-1">${center.name}</h3>
-            <p class="text-xs opacity-80 mb-1">${center.co} | ${center.t}</p>
-            <p class="text-sm">${center.d}</p>
-          </div>
-        `)
-        .addTo(layers.space);
-    });
+  const renderStaticLayersFn = () => {
+    renderStaticLayers(layersRef.current, iconTheme);
   };
 
   const fetchNews = useCallback(async () => {
@@ -976,12 +610,12 @@ export default function App() {
   };
 
   return (
-    <div className="relative h-full w-full flex flex-col text-luxury-bone bg-luxury-black font-serif overflow-hidden">
+    <div className="relative h-full w-full flex flex-col text-luxury-bone bg-[#030303] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#1a1a1a] via-[#050505] to-[#030303] font-serif overflow-hidden">
       {/* Restore UI Button (Only visible when minimized) */}
       {isUiMinimized && (
         <button 
           onClick={() => setIsUiMinimized(false)}
-          className="absolute top-6 left-6 z-[2000] bg-luxury-black/80 border border-luxury-gold/50 p-3 text-luxury-gold hover:bg-luxury-gold hover:text-luxury-black transition-all shadow-[0_0_20px_rgba(212,175,55,0.3)] animate-pulse"
+          className="absolute top-6 left-6 z-[2000] bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl border border-luxury-gold/50 p-3 text-luxury-gold hover:bg-luxury-gold hover:text-luxury-black transition-all shadow-[0_0_20px_rgba(212,175,55,0.3)] animate-pulse"
           title="Restore Interface"
         >
           <Maximize2 size={20} />
@@ -989,7 +623,7 @@ export default function App() {
       )}
 
       {/* Topbar */}
-      <div className={`h-14 bg-luxury-black/95 border-b border-luxury-gold/30 flex items-center justify-between px-6 z-[800] backdrop-blur-xl transition-all duration-700 ${isUiMinimized ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100'}`}>
+      <div className={`h-14 bg-black/30 backdrop-blur-3xl border border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.5)] m-4 rounded-2xl flex items-center justify-between px-6 z-[800] backdrop-blur-xl transition-all duration-700 ${isUiMinimized ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100'}`}>
         <div className="flex items-center gap-4">
           <div className="w-8 h-8 border border-luxury-gold rounded-full flex items-center justify-center">
             <div className="w-1 h-1 bg-luxury-gold rounded-full animate-ping"></div>
@@ -1094,7 +728,7 @@ export default function App() {
               {(logFlash || mapPing) && <span className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping"></span>}
             </span>
           </button>
-          <div className="flex items-center gap-1 border border-luxury-gold/20 px-2 py-1.5 bg-luxury-black/40">
+          <div className="flex items-center gap-1 border border-luxury-gold/20 px-2 py-1.5 bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl">
             <span className="opacity-30 mr-2">Focus:</span>
             <button onClick={() => mapRef.current?.flyTo([34.0, 44.0], 5)} className="hover:text-luxury-gold transition-colors">ME</button>
             <span className="opacity-20">|</span>
@@ -1161,7 +795,7 @@ export default function App() {
         />
 
         {/* System Log Overlay */}
-        <div className={`absolute bottom-20 left-6 w-[450px] h-72 bg-luxury-black/95 border-l-2 border-luxury-gold z-[800] backdrop-blur-3xl flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.9)] transition-all duration-500 origin-bottom-left ${showSystemLog && !isUiMinimized ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-10 pointer-events-none'}`}>
+        <div className={`absolute bottom-20 left-6 w-[450px] h-72 bg-black/40 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-[800] backdrop-blur-3xl flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.9)] transition-all duration-500 origin-bottom-left ${showSystemLog && !isUiMinimized ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-10 pointer-events-none'}`}>
           <div className="p-3 border-b border-luxury-gold/10 flex items-center justify-between bg-gradient-to-r from-luxury-gold/10 to-transparent">
             <div className="flex items-center gap-3">
               <div className="relative">
@@ -1230,7 +864,7 @@ export default function App() {
 
         {/* Strategic Alert Modal */}
         {showAlert && (
-          <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-luxury-black/90 backdrop-blur-md">
+          <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-md">
             <div className="max-w-md w-full p-8 border-2 border-red-500 bg-luxury-black shadow-[0_0_100px_rgba(239,64,76,0.5)] text-center space-y-6">
               <div className="flex justify-center">
                 <div className="w-20 h-20 rounded-full border-4 border-red-500 flex items-center justify-center animate-pulse">
@@ -1254,7 +888,7 @@ export default function App() {
         )}
 
         {/* Sidebar */}
-        <div className={`absolute top-6 left-6 bottom-16 w-80 bg-luxury-black/90 border border-luxury-gold/30 z-[800] backdrop-blur-2xl flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-all duration-700 ${isUiMinimized ? '-translate-x-[120%] opacity-0' : 'translate-x-0 opacity-100'}`}>
+        <div className={`absolute top-6 left-6 bottom-16 w-80 bg-black/50 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-luxury-gold/30 z-[800] backdrop-blur-2xl flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-all duration-700 ${isUiMinimized ? '-translate-x-[120%] opacity-0' : 'translate-x-0 opacity-100'}`}>
           <div className="p-6 border-b border-luxury-gold/20 flex items-center justify-between shrink-0">
             <h2 className="text-[10px] font-light tracking-[0.4em] uppercase opacity-40">Intelligence Layers</h2>
             <div className="flex gap-2">
