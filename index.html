@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GeoEconOrbit Intelligence Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css" />
+  </head>
+  <body>
+    <div id="LD">
+      <div class="orb-animation"></div>
+    </div>
+    <div id="root"></div>
+    <script>
+      (function(){ setTimeout(function(){ document.getElementById('LD').className='gone'; }, 200); })();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
