@@ -718,7 +718,13 @@ export default function App() {
   }, [activeLayers.risk_heatmap, newsFeed]);
 
   return (
-    <div className="relative h-screen w-screen flex flex-col text-geo-text bg-geo-bg font-sans overflow-hidden">
+  return (
+    <div className="relative h-screen w-screen text-geo-text bg-geo-bg font-sans overflow-hidden">
+      {/* Map (Background) */}
+      <div 
+        id="map" 
+        className={`fixed inset-0 z-0 transition-all duration-1000 ${tacticalMode ? 'tactical-map-filter' : ''} ${mapPing ? 'brightness-125' : ''}`}
+      ></div>
       {/* Restore UI Button (Zen Mode) */}
       <AnimatePresence>
         {isUiMinimized && (
@@ -763,7 +769,7 @@ export default function App() {
             initial={{ y: -100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -100, opacity: 0 }}
-            className="h-16 glass-panel-strong w-full flex items-center justify-between px-8 z-[800] border-b border-geo-border/30"
+            className="h-16 glass-panel-strong absolute top-0 left-0 w-full flex items-center justify-between px-8 z-[800] border-b border-geo-border/30"
           >
         {/* Left: Brand + Search */}
         <div className="flex items-center gap-5">
@@ -895,13 +901,10 @@ export default function App() {
     )}
     </AnimatePresence>
 
-      {/* ===== MAIN CONTENT ===== */}
-      <div className="flex-1 relative overflow-hidden">
-        {/* Map */}
-        <div 
-          id="map" 
-          className={`absolute inset-0 z-0 transition-all duration-1000 ${tacticalMode ? 'tactical-map-filter' : ''} ${mapPing ? 'brightness-125' : ''}`}
-        ></div>
+      <div className="relative z-10 h-full w-full pointer-events-none flex flex-col">
+        {/* Transparent Spacer for content flow if needed, but the layout is now absolute */}
+        <div className="h-16 shrink-0"></div>
+        <div className="flex-1 relative">
         
         {/* Ping animation */}
         {mapPing && (
@@ -1018,7 +1021,7 @@ export default function App() {
               }}
               exit={{ x: -350, opacity: 0 }}
               transition={{ type: 'spring', damping: 25, stiffness: 120 }}
-              className="absolute top-4 left-4 bottom-16 w-80 glass-panel-strong rounded-2xl z-[800] flex flex-col overflow-hidden"
+              className="absolute top-20 left-4 bottom-20 w-80 glass-panel-strong rounded-2xl z-[800] flex flex-col overflow-hidden"
               onMouseEnter={() => setIsSidebarHovered(true)}
               onMouseLeave={() => setIsSidebarHovered(false)}
             >

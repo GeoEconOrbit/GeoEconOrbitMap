@@ -136,6 +136,11 @@ async function startServer() {
   const NEWS_SOURCES = [
     { name: 'Reuters World', url: 'https://www.reutersagency.com/en/rss/' },
     { name: 'BBC World News', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
+    { name: 'Al Jazeera', url: 'https://www.aljazeera.com/xml/rss/all.xml' },
+    { name: 'Associated Press', url: 'https://feeds.apnews.com/rss/apf-topnews' },
+    { name: 'The Guardian', url: 'https://www.theguardian.com/world/rss' },
+    { name: 'NPR World', url: 'https://feeds.npr.org/1004/rss.xml' },
+    { name: 'UN News', url: 'https://news.un.org/feed/subscribe/en/news/all/rss.xml' },
     { name: 'Defense News', url: 'https://www.defensenews.com/arc/outboundfeeds/rss/' },
     { name: 'El País Int', url: 'https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/section/internacional/portada' }
   ];
@@ -155,10 +160,10 @@ async function startServer() {
       const cutoff = now - (24 * 60 * 60 * 1000); // 24 hours ago
       let results: any[] = [];
 
-      // 1. Fetch GDELT GeoJSON (High geolocation precision)
+      // 1. Fetch GDELT GeoJSON (Increased volume and broader query)
       try {
-        const query = "conflict attack missile military war";
-        const gdeltGeoUrl = `https://api.gdeltproject.org/api/v2/geo/geo?query=${encodeURIComponent(query)}&format=geojson`;
+        const query = "(conflict OR attack OR military OR war OR economy OR sanction OR unrest OR geopolitics)";
+        const gdeltGeoUrl = `https://api.gdeltproject.org/api/v2/geo/geo?query=${encodeURIComponent(query)}&format=geojson&maxrecords=250&timespan=1440`;
         const gdeltRes = await fetch(gdeltGeoUrl);
         if (gdeltRes.ok) {
           const data = await gdeltRes.json();
@@ -182,7 +187,7 @@ async function startServer() {
       for (const source of NEWS_SOURCES) {
         try {
           const feed = await parser.parseURL(source.url);
-          const items = feed.items.slice(0, 10).map(item => {
+          const items = feed.items.slice(0, 40).map(item => {
             // Basic Geolocation fallback based on title/content keywords
             let coords = null;
             const fullText = (item.title + " " + item.contentSnippet).toLowerCase();
