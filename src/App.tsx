@@ -718,7 +718,6 @@ export default function App() {
   }, [activeLayers.risk_heatmap, newsFeed]);
 
   return (
-  return (
     <div className="relative h-screen w-screen text-geo-text bg-geo-bg font-sans overflow-hidden">
       {/* Map (Background) */}
       <div 
