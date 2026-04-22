@@ -1,6 +1,7 @@
 import L from 'leaflet';
 import 'leaflet.markercluster';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   MILITARY_BASES, 
   SHIPS, 
@@ -20,7 +21,9 @@ import {
   SATELLITES,
   UNDERSEA_CABLES,
   SEMICONDUCTOR_FABS,
-  SPACE_CENTERS
+  SPACE_CENTERS,
+  TRADE_FLOWS,
+  SANCTIONS
 } from './constants';
 import { 
   Shield, 
@@ -105,11 +108,18 @@ export default function App() {
     satellites: false,
     cables: false,
     fabs: false,
-    space: false
+    space: false,
+    sanctions: false,
+    nuclear_weapons: false,
+    risk_heatmap: false,
+    trade_flows: false
   });
   
-  const [iconTheme, setIconTheme] = useState<'emoji' | 'minimal' | 'tactical'>('emoji');
+  const [timeFilter, setTimeFilter] = useState(24); // Hours
+  
+  const [iconTheme, setIconTheme] = useState<'emoji' | 'minimal' | 'tactical'>('minimal');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isSidebarHovered, setIsSidebarHovered] = useState(false);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [userName] = useState(`Intel_${Math.floor(Math.random() * 9999)}`);
@@ -133,6 +143,12 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [logFlash, setLogFlash] = useState(false);
   const [mapPing, setMapPing] = useState(false);
+  const [commodityPrices, setCommodityPrices] = useState([
+    { label: 'WTI', price: '78.42', change: '+1.2%', up: true },
+    { label: 'GOLD', price: '2,342', change: '+0.8%', up: true },
+    { label: 'COPPER', price: '4.52', change: '-0.4%', up: false },
+    { label: 'WHEAT', price: '612', change: '+2.1%', up: true }
+  ]);
 
   const triggerMapPing = () => {
     setMapPing(true);
@@ -235,17 +251,18 @@ export default function App() {
       worldCopyJump: false
     });
 
-    // Stadia Alidade Smooth Dark (Better contrast and professional look)
-    L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors',
-      maxZoom: 20,
+    // Esri World Dark Gray Base (Highly reliable, professional look)
+    L.tileLayer('https://services.arcgisonline.com/arcgis/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Esri, HERE, Garmin, (c) OpenStreetMap contributors, and the GIS user community',
+      maxZoom: 16,
       noWrap: true
     }).addTo(map);
 
-    // Esri World Boundaries (Overlay)
-    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    // World Boundaries and Places (Overlay)
+    L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
       noWrap: true,
-      opacity: 0.4
+      maxZoom: 16,
+      opacity: 0.3
     }).addTo(map);
 
     mapRef.current = map;
@@ -272,7 +289,10 @@ export default function App() {
       satellites: L.layerGroup(),
       cables: L.layerGroup(),
       fabs: L.layerGroup(),
-      space: L.layerGroup()
+      space: L.layerGroup(),
+      sanctions: L.layerGroup(),
+      trade_flows: L.layerGroup(),
+      risk_heatmap: L.layerGroup()
     };
 
     // Static Layers
@@ -286,19 +306,19 @@ export default function App() {
           style: {
             fillColor: 'transparent',
             weight: 0.5,
-            opacity: 0.2,
-            color: '#e9c349',
+            opacity: 0.15,
+            color: '#3B82F6',
             fillOpacity: 0
           },
           onEachFeature: (feature, layer) => {
             layer.on({
               mouseover: (e) => {
                 const l = e.target;
-                l.setStyle({ fillOpacity: 0.1, fillColor: '#e9c349' });
+                l.setStyle({ fillOpacity: 0.08, fillColor: '#3B82F6', weight: 1, opacity: 0.4 });
               },
               mouseout: (e) => {
                 const l = e.target;
-                l.setStyle({ fillOpacity: 0 });
+                l.setStyle({ fillOpacity: 0, weight: 0.5, opacity: 0.15 });
               },
               click: (e) => {
                 const countryName = feature.properties.name;
@@ -328,7 +348,13 @@ export default function App() {
     // WebSocket Chat
     const connectWS = () => {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}`;
+      let host = window.location.host;
+      if (host.includes('localhost:5173')) {
+        host = 'localhost:3000';
+      }
+      // Use explicit /ws path to avoid conflicts
+      const wsUrl = `${protocol}//${host}/ws`;
+      console.log('Connecting to WebSocket:', wsUrl);
       const ws = new WebSocket(wsUrl);
       
       ws.onopen = () => setWsStatus('connected');
@@ -398,9 +424,49 @@ export default function App() {
     updateLiveShips();
   }, [iconTheme]);
 
-  const renderStaticLayersFn = () => {
+  const renderStaticLayersFn = useCallback(() => {
+    if (!layersRef.current.trade_flows || !layersRef.current.sanctions) return;
+    
     renderStaticLayers(layersRef.current, iconTheme);
-  };
+    
+    // Feature 11: Trade Flows (Animatedish)
+    const tradeLayer = layersRef.current.trade_flows as L.LayerGroup;
+    if (tradeLayer) {
+      tradeLayer.clearLayers();
+      TRADE_FLOWS.forEach(flow => {
+        const fromRaw = flow.from.toLowerCase();
+        const toRaw = flow.to.toLowerCase();
+        const from = PLACE_COORDS[fromRaw] || (LEADERS[flow.from] && LEADERS[flow.from].cap);
+        const to = PLACE_COORDS[toRaw] || (LEADERS[flow.to] && LEADERS[flow.to].cap);
+        
+        if (from && to) {
+          L.polyline([[from[1], from[0]], [to[1], to[0]]], {
+            color: '#10B981',
+            weight: 2,
+            opacity: 0.4,
+            dashArray: '10, 10'
+          }).addTo(tradeLayer);
+        }
+      });
+    }
+
+    // Feature 10: Sanctions
+    const sanctionLayer = layersRef.current.sanctions as L.LayerGroup;
+    if (sanctionLayer) {
+      sanctionLayer.clearLayers();
+      SANCTIONS.forEach(s => {
+        const target = PLACE_COORDS[s.target.toLowerCase()] || (LEADERS[s.target] && LEADERS[s.target].cap);
+        if (target) {
+          L.circle([target[1], target[0]], {
+            radius: 300000,
+            color: '#EF4444',
+            fillOpacity: 0.2,
+            weight: 1
+          }).bindPopup(`SANCTION: ${s.target} by ${s.by.join(', ')}`).addTo(sanctionLayer);
+        }
+      });
+    }
+  }, [iconTheme]);
 
   const fetchNews = useCallback(async () => {
     addLog('Updating global news feed...', 'info');
@@ -550,14 +616,10 @@ export default function App() {
 
       const icon = L.divIcon({
         className: 'custom-div-icon',
-        html: iconTheme === 'emoji'
-          ? `<div class="relative" style="transform: rotate(${ship.heading}deg)">
-              <div class="text-lg drop-shadow-[0_0_5px_rgba(0,212,255,0.5)]">🚢</div>
-            </div>`
-          : `<div class="w-6 h-6 text-cyan-400 drop-shadow-[0_0_5px_rgba(0,212,255,0.3)]" style="transform: rotate(${ship.heading}deg)">
-              ${getShipIcon(ship.type, '#00d4ff')}
-            </div>`,
-        iconSize: [24, 24]
+        html: `<div class="w-5 h-5 text-geo-cyan drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]" style="transform: rotate(${ship.heading}deg)">
+                 <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5"><path d="M12 2L3 22L12 18L21 22L12 2Z"/></svg>
+               </div>`,
+        iconSize: [20, 20]
       });
 
       L.marker([ship.coords[1], ship.coords[0]], { icon })
@@ -609,62 +671,122 @@ export default function App() {
     setChatInput('');
   };
 
-  return (
-    <div className="relative h-full w-full flex flex-col text-luxury-bone bg-[#030303] bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-[#1a1a1a] via-[#050505] to-[#030303] font-serif overflow-hidden">
-      {/* Restore UI Button (Only visible when minimized) */}
-      {isUiMinimized && (
-        <button 
-          onClick={() => setIsUiMinimized(false)}
-          className="absolute top-6 left-6 z-[2000] bg-black/40 backdrop-blur-2xl border border-white/10 rounded-2xl border border-luxury-gold/50 p-3 text-luxury-gold hover:bg-luxury-gold hover:text-luxury-black transition-all shadow-[0_0_20px_rgba(212,175,55,0.3)] animate-pulse"
-          title="Restore Interface"
-        >
-          <Maximize2 size={20} />
-        </button>
-      )}
+  // Feature 2: Heatmap logic
+  useEffect(() => {
+    if (!mapRef.current) return;
+    const heatmapLayer = layersRef.current.risk_heatmap;
+    if (activeLayers.risk_heatmap) {
+      // Mock data for heatmap based on newsFeed attacks
+      const heatmapData = newsFeed
+        .filter(n => n.type === 'attack')
+        .map(n => {
+          const coords = n.coords || findCoordsForNews(n.titulo);
+          return coords ? [coords[1], coords[0], 1] : null;
+        })
+        .filter(Boolean);
+      
+      if (heatmapData.length > 0) {
+        // @ts-ignore
+        const cfg = { radius: 2, maxOpacity: 0.8, scaleRadius: true, useLocalExtrema: true, latField: 'lat', lngField: 'lng', valueField: 'count' };
+        // Simplified heatmap approach if the library is not fully compatible with div layers
+        // For now, satisfy with circles if heatmap fails
+      }
+    }
+  }, [activeLayers.risk_heatmap, newsFeed]);
 
-      {/* Topbar */}
-      <div className={`h-14 bg-black/30 backdrop-blur-3xl border border-white/10 shadow-[0_4px_30px_rgba(0,0,0,0.5)] m-4 rounded-2xl flex items-center justify-between px-6 z-[800] backdrop-blur-xl transition-all duration-700 ${isUiMinimized ? '-translate-y-full opacity-0' : 'translate-y-0 opacity-100'}`}>
-        <div className="flex items-center gap-4">
-          <div className="w-8 h-8 border border-luxury-gold rounded-full flex items-center justify-center">
-            <div className="w-1 h-1 bg-luxury-gold rounded-full animate-ping"></div>
+  return (
+    <div className="relative h-full w-full flex flex-col text-geo-text bg-geo-bg font-sans overflow-hidden">
+      {/* Restore UI Button (Zen Mode) */}
+      <AnimatePresence>
+        {isUiMinimized && (
+          <motion.button 
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            onClick={() => setIsUiMinimized(false)}
+            className="absolute top-6 left-6 z-[2000] p-3.5 rounded-2xl glass-panel text-geo-accent hover:bg-geo-accent hover:text-white transition-all duration-300 hover:scale-110 hover:shadow-[0_0_30px_rgba(59,130,246,0.4)] animate-pulse group"
+            title="Restore Interface"
+          >
+            <Maximize2 size={20} />
+            <motion.span 
+              initial={{ x: -10, opacity: 0 }}
+              whileHover={{ x: 0, opacity: 1 }}
+              className="absolute left-full ml-3 px-3 py-1.5 rounded-lg glass-panel text-[10px] tracking-wider transition-opacity whitespace-nowrap font-medium"
+            >
+              RESTORE UI
+            </motion.span>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* Feature 6: Alert Overlay */}
+      <AnimatePresence>
+        {riskLevel === 'CRITICAL' && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[5000] border-2 border-geo-danger/20 pointer-events-none"
+          >
+            <div className="absolute inset-0 bg-geo-danger/5 animate-pulse"></div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ===== TOP BAR ===== */}
+      <AnimatePresence>
+        {!isUiMinimized && (
+          <motion.div 
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -100, opacity: 0 }}
+            className="h-16 glass-panel-strong mx-4 mt-3 rounded-2xl flex items-center justify-between px-6 z-[800]"
+          >
+        {/* Left: Brand + Search */}
+        <div className="flex items-center gap-5">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-geo-accent to-geo-cyan flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.3)]">
+              <Globe size={18} className="text-white" />
+            </div>
+            <div>
+              <span className="font-display font-bold tracking-wider text-lg">GeoEconOrbit</span>
+              <div className="flex items-center gap-2 -mt-0.5">
+                <div className="w-1.5 h-1.5 rounded-full status-live"></div>
+                <span className="text-[9px] tracking-[0.15em] text-geo-accent font-semibold uppercase">Live Protocol</span>
+              </div>
+            </div>
           </div>
-          <span className="font-light tracking-[0.3em] text-xl uppercase">GeoEconOrbit</span>
-          <div className="flex items-center gap-1 text-[9px] tracking-widest bg-luxury-gold/10 text-luxury-gold px-2 py-0.5 border border-luxury-gold/20">
-            LIVE PROTOCOL
-          </div>
-          <form onSubmit={handleSearch} className="ml-4 relative hidden lg:block">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 opacity-30" />
+
+          <form onSubmit={handleSearch} className="ml-2 relative hidden lg:block">
+            <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-geo-text-muted" />
             <input 
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="SEARCH ASSETS/NATIONS..."
-              className="bg-luxury-gray/30 border border-luxury-gold/10 pl-10 pr-4 py-1.5 text-[10px] tracking-widest focus:outline-none focus:border-luxury-gold/50 w-64 transition-all"
+              placeholder="Search assets, nations..."
+              className="bg-geo-surface/80 border border-geo-border rounded-xl pl-10 pr-4 py-2 text-[11px] tracking-wider focus:outline-none focus:border-geo-accent/50 focus:shadow-[0_0_15px_rgba(59,130,246,0.1)] w-56 transition-all placeholder:text-geo-text-muted/50"
             />
           </form>
-          <div className="flex items-center gap-6">
-            <div className="hidden xl:flex flex-col items-end">
-              <div className="text-[8px] tracking-[0.2em] opacity-40 uppercase">Strategic Outlook</div>
-              <div className="text-[10px] font-bold text-luxury-gold tracking-widest">MULTIPOLAR FRICTION</div>
-            </div>
-            
-            <div className="flex flex-col gap-1 w-32">
-              <div className="flex justify-between items-center text-[8px] uppercase tracking-widest">
-                <span className="opacity-40">Risk Level</span>
+
+          {/* Risk Level */}
+          <div className="hidden xl:flex items-center gap-4 ml-2">
+            <div className="flex flex-col gap-1 w-28">
+              <div className="flex justify-between items-center text-[9px] uppercase tracking-wider">
+                <span className="text-geo-text-muted">Risk</span>
                 <span className={`font-bold ${
-                  riskLevel === 'CRITICAL' ? 'text-red-500' :
+                  riskLevel === 'CRITICAL' ? 'text-geo-danger' :
                   riskLevel === 'HIGH' ? 'text-orange-500' :
-                  riskLevel === 'ELEVATED' ? 'text-yellow-500' :
-                  'text-green-500'
+                  riskLevel === 'ELEVATED' ? 'text-geo-warn' :
+                  'text-geo-success'
                 }`}>{riskLevel}</span>
               </div>
-              <div className="h-1.5 w-full bg-luxury-gold/10 border border-luxury-gold/20 overflow-hidden">
+              <div className="h-1.5 w-full bg-geo-border rounded-full overflow-hidden">
                 <div 
-                  className={`h-full transition-all duration-1000 ${
-                    riskLevel === 'CRITICAL' ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)] animate-pulse' :
+                  className={`h-full rounded-full transition-all duration-1000 ${
+                    riskLevel === 'CRITICAL' ? 'bg-geo-danger shadow-[0_0_10px_rgba(239,68,68,0.5)] animate-pulse' :
                     riskLevel === 'HIGH' ? 'bg-orange-500' :
-                    riskLevel === 'ELEVATED' ? 'bg-yellow-500' :
-                    'bg-green-500'
+                    riskLevel === 'ELEVATED' ? 'bg-geo-warn' :
+                    'bg-geo-success'
                   }`}
                   style={{ 
                     width: riskLevel === 'CRITICAL' ? '100%' : 
@@ -677,110 +799,98 @@ export default function App() {
           </div>
         </div>
 
-        <div className="hidden md:flex items-center gap-8 text-[10px] tracking-widest uppercase font-light">
-          <div className="flex flex-col items-center gap-1">
-            <span className="text-[8px] opacity-30">Density</span>
-            <div className="flex gap-0.5">
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className={`w-2 h-1 ${Object.values(activeLayers).filter(v => v).length >= i * 3 ? 'bg-luxury-gold' : 'bg-luxury-gold/10'}`}></div>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-2 opacity-60"><Globe size={12} /> News: {stats.news}</div>
-          <div className="flex items-center gap-2 text-luxury-gold font-bold"><Flame size={12} /> Kinetic: {stats.attacks}</div>
-          <div className="flex items-center gap-2 opacity-60"><Plane size={12} /> Air: {stats.aircraft}</div>
-          <div className="flex items-center gap-2 opacity-60"><Ship size={12} /> Sea: {LIVE_SHIPS.length}</div>
+        {/* Center: Stats */}
+        <div className="hidden md:flex items-center gap-6 text-[11px] font-medium">
+          <div className="flex items-center gap-2 text-geo-text-dim"><Globe size={13} /> <span>{stats.news}</span> <span className="text-[9px] text-geo-text-muted">intel</span></div>
+          <div className="flex items-center gap-2 text-geo-danger font-bold"><Flame size={13} /> <span>{stats.attacks}</span> <span className="text-[9px] font-normal text-geo-text-muted">kinetic</span></div>
+          <div className="flex items-center gap-2 text-geo-text-dim"><Plane size={13} /> <span>{stats.aircraft}</span> <span className="text-[9px] text-geo-text-muted">air</span></div>
+          <div className="flex items-center gap-2 text-geo-text-dim"><Ship size={13} /> <span>{LIVE_SHIPS.length}</span> <span className="text-[9px] text-geo-text-muted">sea</span></div>
         </div>
 
-        <div className="flex items-center gap-4 text-[10px] tracking-widest uppercase">
+        {/* Right: Actions */}
+        <div className="flex items-center gap-2">
           <button 
-            onClick={() => {
-              fetchNews();
-              fetchAircraft();
-              addLog('Manual data refresh initiated.', 'info');
-            }}
-            className="flex items-center gap-2 border border-luxury-gold/30 px-3 py-1.5 hover:bg-luxury-gold hover:text-luxury-black transition-all duration-300"
-            title="Refresh Data"
+            onClick={() => { fetchNews(); fetchAircraft(); addLog('Manual refresh.', 'info'); }}
+            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-geo-border text-[10px] font-medium tracking-wider uppercase text-geo-text-dim hover:text-geo-accent hover:border-geo-accent/30 btn-glow transition-all"
           >
-            <RefreshCw size={12} className="animate-spin-slow" /> REFRESH
+            <RefreshCw size={13} className="animate-spin-slow" /> Refresh
           </button>
           <button 
             onClick={() => setShowStrategicAnalysis(true)}
-            className="flex items-center gap-2 border border-luxury-gold bg-luxury-gold/10 text-luxury-gold px-3 py-1.5 hover:bg-luxury-gold hover:text-luxury-black transition-all duration-300"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl bg-geo-accent/10 border border-geo-accent/20 text-geo-accent text-[10px] font-semibold tracking-wider uppercase btn-glow transition-all"
           >
-            <TrendingUp size={12} /> STRATEGIC_ANALYSIS
+            <TrendingUp size={13} /> Analysis
           </button>
           <button 
-            onClick={() => {
-              setShowSystemLog(!showSystemLog);
-              if (!showSystemLog) triggerMapPing();
-            }}
-            className={`flex items-center gap-2 border transition-all duration-300 px-3 py-1.5 ${
-              showSystemLog ? 'border-luxury-gold bg-luxury-gold text-luxury-black' : 
-              logFlash ? 'border-luxury-gold bg-luxury-gold/40 text-luxury-gold scale-105 shadow-[0_0_15px_rgba(212,175,55,0.5)]' :
-              'border-luxury-gold/30 text-luxury-gold/60 hover:bg-luxury-gold/10'
+            onClick={() => { setShowSystemLog(!showSystemLog); if (!showSystemLog) triggerMapPing(); }}
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-[10px] font-medium tracking-wider uppercase transition-all duration-300 ${
+              showSystemLog ? 'bg-geo-accent border-geo-accent text-white' :
+              logFlash ? 'border-geo-accent text-geo-accent bg-geo-accent/10 scale-105' :
+              'border-geo-border text-geo-text-muted hover:text-geo-accent hover:border-geo-accent/30'
             }`}
-            title="Toggle System Log & Ping"
           >
-            <Activity size={12} className={logFlash || mapPing ? 'animate-pulse text-luxury-gold' : ''} /> 
-            <span className="relative">
-              LOG_{showSystemLog ? 'ON' : 'OFF'}
-              {(logFlash || mapPing) && <span className="absolute -top-1 -right-1 w-1.5 h-1.5 bg-red-500 rounded-full animate-ping"></span>}
-            </span>
+            <Activity size={13} className={logFlash ? 'animate-pulse' : ''} />
+            Log
+            {logFlash && <span className="w-1.5 h-1.5 rounded-full bg-geo-danger animate-ping"></span>}
           </button>
-          <div className="flex items-center gap-1 border border-luxury-gold/20 px-2 py-1.5 bg-white/5 backdrop-blur-xl border border-white/10 rounded-xl">
-            <span className="opacity-30 mr-2">Focus:</span>
-            <button onClick={() => mapRef.current?.flyTo([34.0, 44.0], 5)} className="hover:text-luxury-gold transition-colors">ME</button>
-            <span className="opacity-20">|</span>
-            <button onClick={() => mapRef.current?.flyTo([15.0, 115.0], 5)} className="hover:text-luxury-gold transition-colors">SCS</button>
-            <span className="opacity-20">|</span>
-            <button onClick={() => mapRef.current?.flyTo([50.0, 30.0], 5)} className="hover:text-luxury-gold transition-colors">EE</button>
+
+          {/* Quick Focus */}
+          <div className="hidden xl:flex items-center gap-1 px-2 py-2 rounded-xl border border-geo-border text-[10px] font-medium">
+            <span className="text-geo-text-muted mr-1.5">Focus:</span>
+            {[
+              { label: 'ME', coords: [34.0, 44.0] as [number, number] },
+              { label: 'SCS', coords: [15.0, 115.0] as [number, number] },
+              { label: 'EU', coords: [50.0, 10.0] as [number, number] },
+            ].map((f, i) => (
+              <React.Fragment key={f.label}>
+                {i > 0 && <span className="text-geo-border mx-0.5">|</span>}
+                <button onClick={() => mapRef.current?.flyTo(f.coords, 5)} className="text-geo-text-dim hover:text-geo-accent transition-colors font-semibold">{f.label}</button>
+              </React.Fragment>
+            ))}
           </div>
-          <button 
-            onClick={() => setShowCoords(!showCoords)}
-            className={`flex items-center gap-2 border ${showCoords ? 'border-luxury-gold bg-luxury-gold/20 text-luxury-gold' : 'border-luxury-gold/30 opacity-60'} px-3 py-1.5 hover:bg-luxury-gold hover:text-luxury-black transition-all duration-300`}
-            title="Toggle Coordinates"
-          >
-            <Crosshair size={12} /> {showCoords ? 'COORDS_ON' : 'COORDS_OFF'}
-          </button>
+
           <button 
             onClick={() => setTacticalMode(!tacticalMode)}
-            className={`flex items-center gap-2 border ${tacticalMode ? 'border-luxury-gold bg-luxury-gold/20 text-luxury-gold' : 'border-luxury-gold/30 opacity-60'} px-3 py-1.5 hover:bg-luxury-gold hover:text-luxury-black transition-all duration-300`}
+            className={`p-2 rounded-xl border transition-all ${tacticalMode ? 'bg-geo-accent/10 border-geo-accent/30 text-geo-accent' : 'border-geo-border text-geo-text-muted'}`}
+            title="Tactical Mode"
           >
-            <Shield size={12} /> TACTICAL_{tacticalMode ? 'ON' : 'OFF'}
+            <Shield size={14} />
           </button>
           <button 
             onClick={() => setIsUiMinimized(true)}
-            className="flex items-center gap-2 border border-luxury-gold/30 px-3 py-1.5 hover:bg-luxury-gold hover:text-luxury-black transition-all duration-300"
-            title="Minimize UI"
+            className="p-2 rounded-xl border border-geo-border text-geo-text-muted hover:text-geo-accent hover:border-geo-accent/30 transition-all"
+            title="Zen Mode"
           >
-            <Minimize2 size={12} /> ZEN_MODE
+            <Minimize2 size={14} />
           </button>
         </div>
-      </div>
+      </motion.div>
+    )}
+    </AnimatePresence>
 
+      {/* ===== MAIN CONTENT ===== */}
       <div className="flex-1 relative overflow-hidden">
+        {/* Map */}
         <div 
           id="map" 
-          className={`absolute inset-0 z-0 transition-all duration-1000 ${tacticalMode ? 'tactical-map-filter' : ''} ${mapPing ? 'brightness-125 contrast-125' : ''}`}
+          className={`absolute inset-0 z-0 transition-all duration-1000 ${tacticalMode ? 'tactical-map-filter' : ''} ${mapPing ? 'brightness-125' : ''}`}
         ></div>
         
+        {/* Ping animation */}
         {mapPing && (
           <div className="absolute inset-0 z-[10] pointer-events-none flex items-center justify-center">
-            <div className="w-[100vmax] h-[100vmax] border-[100px] border-luxury-gold/10 rounded-full animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
-            <div className="absolute inset-0 bg-luxury-gold/5 animate-pulse"></div>
+            <div className="w-[100vmax] h-[100vmax] border-[80px] border-geo-accent/5 rounded-full animate-[ping_2s_cubic-bezier(0,0,0.2,1)_infinite]"></div>
           </div>
         )}
         
-        <TacticalOverlay mapRef={mapRef} showCoords={showCoords} />
-        <div className="tactical-grid"></div>
-        <div className="vignette"></div>
-        {tacticalMode && (
-          <>
-            <div className="scanline"></div>
-            <div className="scan-bar"></div>
-          </>
-        )}
+      <TacticalOverlay mapRef={mapRef} showCoords={showCoords} />
+      <div className="tactical-grid"></div>
+      {tacticalMode && (
+        <>
+          <div className="scanline"></div>
+          <div className="scan-bar"></div>
+        </>
+      )}
 
         <CountryDetailPanel 
           selectedCountry={selectedCountry}
@@ -794,92 +904,75 @@ export default function App() {
           onClose={() => setShowStrategicAnalysis(false)} 
         />
 
-        {/* System Log Overlay */}
-        <div className={`absolute bottom-20 left-6 w-[450px] h-72 bg-black/40 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] z-[800] backdrop-blur-3xl flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.9)] transition-all duration-500 origin-bottom-left ${showSystemLog && !isUiMinimized ? 'scale-100 opacity-100 translate-y-0' : 'scale-95 opacity-0 translate-y-10 pointer-events-none'}`}>
-          <div className="p-3 border-b border-luxury-gold/10 flex items-center justify-between bg-gradient-to-r from-luxury-gold/10 to-transparent">
+        {/* ===== SYSTEM LOG ===== */}
+        <AnimatePresence>
+          {showSystemLog && !isUiMinimized && (
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0, y: 50, x: -20 }}
+              animate={{ scale: 1, opacity: 1, y: 0, x: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 50, x: -20 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 150 }}
+              className="absolute bottom-20 left-6 w-[460px] h-72 glass-panel-strong rounded-2xl z-[800] flex flex-col"
+            >
+          <div className="p-4 border-b border-geo-border/50 flex items-center justify-between bg-gradient-to-r from-geo-accent/10 to-transparent rounded-t-2xl">
             <div className="flex items-center gap-3">
               <div className="relative">
-                <div className="w-2 h-2 rounded-full bg-luxury-gold animate-pulse"></div>
-                <div className="absolute inset-0 w-2 h-2 rounded-full bg-luxury-gold animate-ping opacity-50"></div>
+                <div className="w-2 h-2 rounded-full status-live"></div>
               </div>
-              <div className="flex flex-col">
-                <span className="text-[10px] font-black tracking-[0.4em] uppercase text-luxury-gold leading-none">System Terminal</span>
-                <span className="text-[7px] opacity-40 uppercase tracking-widest mt-0.5">Secure Intelligence Stream // v1.2.0</span>
+              <div>
+                <span className="text-[11px] font-bold tracking-wider uppercase text-geo-accent">System Terminal</span>
+                <div className="text-[8px] text-geo-text-muted tracking-wider mt-0.5">Secure Intelligence Stream</div>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1 mr-4">
-                <div className="w-1 h-1 bg-luxury-gold/20"></div>
-                <div className="w-1 h-1 bg-luxury-gold/40"></div>
-                <div className="w-1 h-1 bg-luxury-gold/60"></div>
-              </div>
-              <button 
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowSystemLog(false);
-                }} 
-                className="p-1.5 hover:bg-red-500/20 hover:text-red-500 transition-all rounded-sm group"
-                title="Close Terminal"
-              >
-                <X size={14} className="group-hover:rotate-90 transition-transform duration-300" />
-              </button>
-            </div>
+            <button 
+              onClick={(e) => { e.stopPropagation(); setShowSystemLog(false); }}
+              className="p-1.5 rounded-lg hover:bg-geo-danger/10 text-geo-text-muted hover:text-geo-danger transition-all group"
+            >
+              <X size={14} className="group-hover:rotate-90 transition-transform duration-300" />
+            </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-5 font-mono text-[10px] space-y-2 custom-scrollbar bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] bg-fixed">
+          <div className="flex-1 overflow-y-auto p-4 font-mono text-[10px] space-y-1.5 no-scrollbar">
             {systemLogs.map((log, i) => (
-              <div key={i} className="flex gap-4 group animate-in slide-in-from-left-2 duration-300">
-                <span className="opacity-20 font-bold shrink-0">[{log.time}]</span>
+              <div key={i} className="flex gap-3 py-1 px-2 rounded-lg hover:bg-white/[0.02] transition-colors">
+                <span className="text-geo-text-muted shrink-0 font-semibold">[{log.time}]</span>
                 <span className={`leading-relaxed ${
-                  log.type === 'error' ? 'text-red-500 font-bold' : 
-                  log.type === 'warn' ? 'text-orange-500' : 
-                  'text-luxury-gold/90'
+                  log.type === 'error' ? 'text-geo-danger font-bold' : 
+                  log.type === 'warn' ? 'text-geo-warn' : 
+                  'text-geo-accent-light/80'
                 }`}>
-                  <span className="opacity-40 mr-2">❯</span>
+                  <span className="text-geo-text-muted mr-1.5">❯</span>
                   {log.msg}
                 </span>
               </div>
             ))}
             {systemLogs.length === 0 && (
-              <div className="h-full flex items-center justify-center opacity-10 flex-col gap-4">
-                <Activity size={48} className="animate-pulse" />
-                <span className="text-[10px] tracking-[0.5em] uppercase">No Active Telemetry</span>
+              <div className="h-full flex items-center justify-center flex-col gap-3">
+                <Activity size={36} className="text-geo-accent/20 animate-pulse" />
+                <span className="text-[10px] tracking-[0.3em] uppercase text-geo-text-muted">No Active Telemetry</span>
               </div>
             )}
-            <div className="h-4"></div>
           </div>
-          <div className="h-1 bg-gradient-to-r from-luxury-gold via-transparent to-transparent opacity-30"></div>
-        </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
 
-        {/* Restore UI Button (Zen Mode) */}
-        {isUiMinimized && (
-          <button 
-            onClick={() => setIsUiMinimized(false)}
-            className="absolute top-6 left-6 z-[2000] p-4 bg-luxury-gold text-luxury-black rounded-full shadow-[0_0_30px_rgba(212,175,55,0.5)] hover:scale-110 transition-all duration-300 animate-in fade-in zoom-in group"
-            title="RESTORE UI"
-          >
-            <Maximize2 size={24} />
-            <span className="absolute left-full ml-4 px-3 py-1 bg-luxury-black border border-luxury-gold text-[10px] tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">RESTORE INTERFACE</span>
-          </button>
-        )}
-
-        {/* Strategic Alert Modal */}
+        {/* ===== ALERT MODAL ===== */}
         {showAlert && (
-          <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-black/50 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-md">
-            <div className="max-w-md w-full p-8 border-2 border-red-500 bg-luxury-black shadow-[0_0_100px_rgba(239,64,76,0.5)] text-center space-y-6">
+          <div className="absolute inset-0 z-[2000] flex items-center justify-center bg-geo-bg/80 backdrop-blur-xl">
+            <div className="max-w-md w-full p-8 glass-panel-strong rounded-3xl border-2 border-geo-danger/50 shadow-[0_0_80px_rgba(239,68,68,0.2)] text-center space-y-6">
               <div className="flex justify-center">
-                <div className="w-20 h-20 rounded-full border-4 border-red-500 flex items-center justify-center animate-pulse">
-                  <AlertTriangle size={40} className="text-red-500" />
+                <div className="w-20 h-20 rounded-full border-4 border-geo-danger/50 flex items-center justify-center bg-geo-danger/10 animate-pulse">
+                  <AlertTriangle size={36} className="text-geo-danger" />
                 </div>
               </div>
-              <h2 className="text-3xl font-black tracking-[0.3em] text-red-500 uppercase">Strategic Alert</h2>
-              <p className="text-sm font-light leading-relaxed opacity-80">
-                Global risk level has escalated to <span className="text-red-500 font-bold">CRITICAL</span>. 
-                Multiple kinetic events detected in strategic sectors. 
-                All tactical assets are on high alert.
+              <h2 className="text-2xl font-display font-bold tracking-wider text-geo-danger uppercase">Strategic Alert</h2>
+              <p className="text-sm leading-relaxed text-geo-text-dim">
+                Global risk level has escalated to <span className="text-geo-danger font-bold">CRITICAL</span>. 
+                Multiple kinetic events detected across strategic sectors.
               </p>
               <button 
                 onClick={() => setShowAlert(false)}
-                className="w-full py-4 bg-red-500 text-luxury-black font-bold tracking-widest hover:bg-white transition-colors uppercase"
+                className="w-full py-3.5 bg-geo-danger hover:bg-geo-danger/80 text-white font-bold tracking-widest rounded-xl transition-all duration-300 uppercase text-sm"
               >
                 Acknowledge Protocol
               </button>
@@ -887,36 +980,56 @@ export default function App() {
           </div>
         )}
 
-        {/* Sidebar */}
-        <div className={`absolute top-6 left-6 bottom-16 w-80 bg-black/50 backdrop-blur-3xl border border-white/10 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] border border-luxury-gold/30 z-[800] backdrop-blur-2xl flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-all duration-700 ${isUiMinimized ? '-translate-x-[120%] opacity-0' : 'translate-x-0 opacity-100'}`}>
-          <div className="p-6 border-b border-luxury-gold/20 flex items-center justify-between shrink-0">
-            <h2 className="text-[10px] font-light tracking-[0.4em] uppercase opacity-40">Intelligence Layers</h2>
+        {/* ===== LEFT SIDEBAR ===== */}
+        <AnimatePresence>
+          {!isUiMinimized && (
+            <motion.div 
+              initial={{ x: -350, opacity: 0 }}
+              animate={{ 
+                x: isSidebarHovered ? 0 : -260, 
+                opacity: isSidebarHovered ? 1 : 0.6 
+              }}
+              exit={{ x: -350, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 120 }}
+              className="absolute top-4 left-4 bottom-16 w-80 glass-panel-strong rounded-2xl z-[800] flex flex-col overflow-hidden"
+              onMouseEnter={() => setIsSidebarHovered(true)}
+              onMouseLeave={() => setIsSidebarHovered(false)}
+            >
+          <div className="p-5 border-b border-geo-border/50 flex items-center justify-between shrink-0">
+            <h2 className="text-[11px] font-semibold tracking-[0.2em] uppercase text-geo-text-muted">Intelligence Layers</h2>
             <div className="flex gap-2">
-              <button onClick={() => applyPreset('CLEAR')} className="text-[8px] border border-luxury-gold/20 px-1 hover:bg-luxury-gold/10">CLR</button>
-              <Settings size={14} className="opacity-40" />
+              <button onClick={() => applyPreset('CLEAR')} className="text-[9px] px-2.5 py-1 rounded-lg border border-geo-border text-geo-text-muted hover:text-geo-accent hover:border-geo-accent/30 transition-all font-medium">CLR</button>
+              <Settings size={14} className="text-geo-text-muted mt-0.5" />
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
-            <div className="mb-6 grid grid-cols-2 gap-2">
-              <button onClick={() => applyPreset('MILITARY')} className="text-[9px] border border-red-500/30 bg-red-500/5 py-2 hover:bg-red-500/20 transition-all uppercase tracking-widest font-bold">Military</button>
-              <button onClick={() => applyPreset('ECONOMIC')} className="text-[9px] border border-cyan-500/30 bg-cyan-500/5 py-2 hover:bg-cyan-500/20 transition-all uppercase tracking-widest font-bold">Economic</button>
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
+            {/* Preset Buttons */}
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {[
+                { id: 'MILITARY' as const, label: 'Military', color: 'border-geo-danger/30 bg-geo-danger/5 hover:bg-geo-danger/15 text-geo-danger' },
+                { id: 'ECONOMIC' as const, label: 'Economic', color: 'border-geo-cyan/30 bg-geo-cyan/5 hover:bg-geo-cyan/15 text-geo-cyan' },
+                { id: 'CYBER' as const, label: 'Cyber', color: 'border-geo-success/30 bg-geo-success/5 hover:bg-geo-success/15 text-geo-success' },
+              ].map(p => (
+                <button key={p.id} onClick={() => applyPreset(p.id)} className={`text-[9px] border py-2 rounded-xl transition-all uppercase tracking-wider font-bold ${p.color}`}>{p.label}</button>
+              ))}
             </div>
 
-            <div className="space-y-6">
+            {/* Layer Sections */}
+            <div className="space-y-4">
               <LayerSection title="OPERATIONS" activeLayers={activeLayers} toggle={toggleLayer} collapsed={collapsedSections['OPERATIONS']} onToggleCollapse={() => setCollapsedSections(prev => ({...prev, OPERATIONS: !prev.OPERATIONS}))} items={[
                 { id: 'news', label: 'Global Intel', icon: Globe },
-                { id: 'attacks', label: 'Kinetic Events', icon: Flame, color: 'text-luxury-gold' },
+                { id: 'attacks', label: 'Kinetic Events', icon: Flame, color: 'text-geo-danger' },
                 { id: 'nuclear', label: 'Nuclear Deterrent', icon: Radio, color: 'text-yellow-400' }
               ]} />
               
               <LayerSection title="ASSETS" activeLayers={activeLayers} toggle={toggleLayer} collapsed={collapsedSections['ASSETS']} onToggleCollapse={() => setCollapsedSections(prev => ({...prev, ASSETS: !prev.ASSETS}))} items={[
                 { id: 'civil_air', label: 'Civilian Air', icon: Plane },
-                { id: 'mil_air', label: 'Strategic Air', icon: Shield, color: 'text-luxury-gold' },
-                { id: 'warships', label: 'Naval Groups', icon: Ship, color: 'text-luxury-gold' },
+                { id: 'mil_air', label: 'Strategic Air', icon: Shield, color: 'text-geo-accent' },
+                { id: 'warships', label: 'Naval Groups', icon: Ship, color: 'text-geo-accent' },
                 { id: 'live_ships', label: 'AIS Vessels', icon: Anchor },
                 { id: 'bases', label: 'Command Posts', icon: Anchor },
-                { id: 'satellites', label: 'Orbital Recon', icon: SatelliteIcon, color: 'text-cyan-400' },
+                { id: 'satellites', label: 'Orbital Recon', icon: SatelliteIcon, color: 'text-geo-cyan' },
                 { id: 'space', label: 'Spaceports', icon: Rocket, color: 'text-orange-400' }
               ]} />
 
@@ -924,49 +1037,51 @@ export default function App() {
                 { id: 'oil', label: 'Energy Reserves', icon: Droplets },
                 { id: 'wheat', label: 'Agri-Belts', icon: Wheat },
                 { id: 'resources', label: 'Rare Earths', icon: Cpu },
-                { id: 'fabs', label: 'Semiconductor Fabs', icon: Microchip, color: 'text-cyan-400' }
+                { id: 'fabs', label: 'Semiconductor Fabs', icon: Microchip, color: 'text-geo-cyan' }
               ]} />
 
               <LayerSection title="GEOPOLITICS" activeLayers={activeLayers} toggle={toggleLayer} collapsed={collapsedSections['GEOPOLITICS']} onToggleCollapse={() => setCollapsedSections(prev => ({...prev, GEOPOLITICS: !prev.GEOPOLITICS}))} items={[
                 { id: 'connections', label: 'Strategic Arcs', icon: LinkIcon },
-                { id: 'cyber', label: 'Cyber Warfare', icon: Activity, color: 'text-green-400' },
-                { id: 'cables', label: 'Undersea Cables', icon: Cable, color: 'text-cyan-400' },
+                { id: 'cyber', label: 'Cyber Warfare', icon: Activity, color: 'text-geo-success' },
+                { id: 'cables', label: 'Undersea Cables', icon: Cable, color: 'text-geo-cyan' },
                 { id: 'ideology', label: 'Political Map', icon: Users },
                 { id: 'chokepoints', label: 'Trade Chokepoints', icon: Anchor },
                 { id: 'pipelines', label: 'Energy Pipelines', icon: Droplets }
               ]} />
             </div>
 
-            <div className="mt-8 pt-6 border-t border-luxury-gold/10">
-              <h3 className="text-[10px] tracking-[0.4em] uppercase opacity-40 mb-4">System Diagnostics</h3>
+            {/* System Diagnostics */}
+            <div className="mt-6 pt-4 border-t border-geo-border/30">
+              <h3 className="text-[10px] font-semibold tracking-[0.2em] uppercase text-geo-text-muted mb-3">System Status</h3>
               <div className="space-y-2">
-                <div className="flex justify-between text-[9px] tracking-widest">
-                  <span className="opacity-40">Uptime</span>
-                  <span className="text-luxury-gold">04:12:55</span>
-                </div>
-                <div className="flex justify-between text-[9px] tracking-widest">
-                  <span className="opacity-40">Signal Strength</span>
-                  <span className="text-green-400">98.2%</span>
-                </div>
-                <div className="flex justify-between text-[9px] tracking-widest">
-                  <span className="opacity-40">Encryption</span>
-                  <span className="text-luxury-gold">AES-256</span>
-                </div>
+                {[
+                  { label: 'Uptime', value: '04:12:55', color: 'text-geo-accent' },
+                  { label: 'Signal', value: '98.2%', color: 'text-geo-success' },
+                  { label: 'Encryption', value: 'AES-256', color: 'text-geo-cyan' },
+                ].map(d => (
+                  <div key={d.label} className="flex justify-between text-[10px] p-2 rounded-lg border border-geo-border/30 bg-geo-surface/30">
+                    <span className="text-geo-text-muted">{d.label}</span>
+                    <span className={`font-mono font-semibold ${d.color}`}>{d.value}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
 
-        {/* Breaking News Ticker */}
-        <div className={`absolute bottom-0 left-0 right-0 h-10 bg-luxury-black border-t border-luxury-gold/20 z-[800] flex items-center overflow-hidden transition-all duration-700 ${isUiMinimized ? 'translate-y-full opacity-0' : 'translate-y-0 opacity-100'}`}>
-          <div className="bg-luxury-gold text-luxury-black px-4 h-full flex items-center text-[10px] font-black uppercase tracking-[0.2em]">
+        {/* ===== BREAKING NEWS TICKER ===== */}
+        <div className={`absolute bottom-0 left-0 right-0 h-10 glass-panel border-t border-geo-border/30 z-[800] flex items-center overflow-hidden transition-all duration-700 ${isUiMinimized ? 'translate-y-full opacity-0' : 'translate-y-0 opacity-100'}`}>
+          <div className="bg-gradient-to-r from-geo-accent to-geo-cyan text-white px-4 h-full flex items-center text-[10px] font-bold uppercase tracking-wider rounded-r-lg shadow-[4px_0_15px_rgba(59,130,246,0.3)]">
             Flash
           </div>
           <div className="flex-1 overflow-hidden">
-            <div className="whitespace-nowrap animate-marquee flex items-center gap-16 text-[11px] font-light tracking-wide opacity-90">
+            <div className="whitespace-nowrap animate-marquee flex items-center gap-16 text-[11px] font-light tracking-wide">
               {newsFeed.map((n, i) => (
                 <span key={i} className="flex items-center gap-3">
-                  <span className="text-luxury-gold font-mono">[{n.hora}]</span> {n.titulo}
+                  <span className="text-geo-accent font-mono font-semibold">[{n.hora}]</span> 
+                  <span className="text-geo-text-dim">{n.titulo}</span>
                 </span>
               ))}
             </div>
@@ -974,175 +1089,153 @@ export default function App() {
         </div>
       </div>
 
-      {/* Drawer Toggle */}
+      {/* ===== DRAWER TOGGLE ===== */}
       <button 
         onClick={() => setDrawerOpen(!drawerOpen)}
-        className={`absolute bottom-24 right-10 w-14 h-14 bg-luxury-gold text-luxury-black rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(212,175,55,0.3)] z-[900] hover:scale-110 transition-all duration-700 ${isUiMinimized ? 'translate-x-[200%] opacity-0' : 'translate-x-0 opacity-100'}`}
+        className={`absolute bottom-24 right-8 w-12 h-12 rounded-2xl bg-gradient-to-br from-geo-accent to-geo-cyan text-white flex items-center justify-center shadow-[0_0_25px_rgba(59,130,246,0.3)] z-[900] hover:scale-110 transition-all duration-500 ${isUiMinimized ? 'translate-x-[200%] opacity-0' : 'translate-x-0 opacity-100'}`}
       >
-        {drawerOpen ? <ChevronDown size={24} /> : <ChevronUp size={24} />}
+        {drawerOpen ? <ChevronDown size={22} /> : <ChevronUp size={22} />}
       </button>
 
-      {/* Intelligence Drawer */}
-      <div className={`absolute bottom-0 left-0 right-0 h-[60vh] bg-luxury-black border-t border-luxury-gold/30 transition-all duration-700 ease-in-out z-[850] flex overflow-hidden shadow-[0_-20px_50px_rgba(0,0,0,0.8)] ${drawerOpen ? 'translate-y-0' : 'translate-y-full'}`}>
-        <div className="w-80 border-r border-luxury-gold/10 flex flex-col bg-luxury-gray/20">
-          <div className="p-6 border-b border-luxury-gold/10 flex items-center justify-between font-light text-[10px] tracking-[0.3em] uppercase">
-            <div className="flex items-center gap-3"><Shield size={14} className="text-luxury-gold" /> Tactical Data</div>
+      {/* ===== INTELLIGENCE DRAWER ===== */}
+      <div className={`absolute bottom-0 left-0 right-0 h-[60vh] glass-panel-strong border-t border-geo-border/30 transition-all duration-700 ease-in-out z-[850] flex overflow-hidden ${drawerOpen ? 'translate-y-0' : 'translate-y-full'}`}>
+        {/* Tactical Assets */}
+        <div className="w-80 border-r border-geo-border/30 flex flex-col">
+          <div className="p-5 border-b border-geo-border/30 flex items-center gap-3 text-[11px] font-semibold tracking-wider uppercase text-geo-text-dim">
+            <Shield size={15} className="text-geo-accent" /> Tactical Data
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar">
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5 no-scrollbar">
             {milAircraft.map(a => (
               <div 
                 key={a.icao} 
-                className="p-3 border border-luxury-gold/5 hover:bg-luxury-gold/5 cursor-pointer transition-all"
+                className="p-3 rounded-xl border border-geo-border/30 hover:bg-geo-accent/5 hover:border-geo-accent/20 cursor-pointer transition-all group"
                 onClick={() => mapRef.current?.flyTo([a.coords[1], a.coords[0]], 8)}
               >
                 <div className="flex justify-between items-center mb-1">
-                  <span className="text-[11px] font-bold text-luxury-gold">{a.callsign}</span>
-                  <span className="text-[9px] font-mono opacity-40">{a.alt} FT</span>
+                  <span className="text-[11px] font-bold text-geo-accent group-hover:text-geo-accent-light">{a.callsign}</span>
+                  <span className="text-[9px] font-mono text-geo-text-muted">{a.alt} FT</span>
                 </div>
-                <div className="text-[9px] opacity-30 uppercase tracking-widest">{a.country}</div>
+                <div className="text-[9px] text-geo-text-muted uppercase tracking-wider">{a.country}</div>
               </div>
             ))}
-            {milAircraft.length === 0 && <div className="text-[10px] opacity-20 p-4 text-center">No tactical assets detected</div>}
+            {milAircraft.length === 0 && <div className="text-[11px] text-geo-text-muted p-6 text-center">No tactical assets detected</div>}
           </div>
         </div>
 
-        <div className="flex-1 border-r border-luxury-gold/10 flex flex-col">
-          <div className="p-6 border-b border-luxury-gold/10 flex items-center justify-between font-light text-[10px] tracking-[0.3em] uppercase">
-            <div className="flex items-center gap-3"><Globe size={14} className="text-luxury-gold" /> Intelligence Feed</div>
-            <div className="opacity-30">Real-time Signal</div>
+        {/* Intelligence Feed */}
+        <div className="flex-1 border-r border-geo-border/30 flex flex-col">
+          <div className="p-5 border-b border-geo-border/30 flex items-center justify-between text-[11px] font-semibold tracking-wider uppercase text-geo-text-dim">
+            <div className="flex items-center gap-3"><Globe size={15} className="text-geo-accent" /> Intelligence Feed</div>
+            <span className="text-[9px] text-geo-text-muted font-normal">Real-time Signal</span>
           </div>
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
             {newsFeed.map((n, i) => (
               <div 
                 key={i} 
-                className={`p-5 border border-luxury-gold/10 hover:border-luxury-gold/40 transition-all duration-300 cursor-pointer group ${n.titulo.toLowerCase().includes('attack') || n.titulo.toLowerCase().includes('missile') ? 'kinetic-attack' : ''}`}
+                className={`p-4 rounded-xl border border-geo-border/30 hover:border-geo-accent/30 transition-all duration-300 cursor-pointer group ${n.titulo.toLowerCase().includes('attack') || n.titulo.toLowerCase().includes('missile') ? 'kinetic-attack' : ''}`}
                 onClick={() => {
                   const coords = findCoordsForNews(n.titulo);
                   if (coords) mapRef.current?.flyTo([coords[1], coords[0]], 6);
                 }}
               >
-                <div className="flex justify-between items-start mb-3">
-                  <span className="text-[10px] font-mono text-luxury-gold">SIGNAL_{n.hora.replace(':', '')}</span>
-                  <span className="text-[9px] opacity-40 uppercase tracking-widest">{n.fuente}</span>
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[10px] font-mono text-geo-accent font-semibold">SIG_{n.hora.replace(':', '')}</span>
+                  <span className="text-[9px] text-geo-text-muted uppercase tracking-wider">{n.fuente}</span>
                 </div>
-                <h3 className="text-sm font-medium leading-relaxed group-hover:text-luxury-gold transition-colors">{n.titulo}</h3>
-                <div className="mt-3 text-[10px] opacity-30 uppercase tracking-[0.2em]">Verified Intelligence</div>
+                <h3 className="text-sm font-medium leading-relaxed group-hover:text-geo-accent transition-colors">{n.titulo}</h3>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="w-80 border-r border-luxury-gold/10 flex flex-col bg-luxury-gray/10">
-          <div className="p-6 border-b border-luxury-gold/10 flex items-center justify-between font-light text-[10px] tracking-[0.3em] uppercase">
-            <div className="flex items-center gap-3"><Activity size={14} className="text-luxury-gold" /> Strategic Analysis</div>
+        {/* Strategic Analysis Column */}
+        <div className="w-80 border-r border-geo-border/30 flex flex-col bg-geo-surface/20">
+          <div className="p-5 border-b border-geo-border/30 flex items-center gap-3 text-[11px] font-semibold tracking-wider uppercase text-geo-text-dim">
+            <Activity size={15} className="text-geo-accent" /> Strategic Overview
           </div>
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 no-scrollbar">
-            <div className="space-y-4">
-              <h4 className="text-[10px] tracking-widest uppercase opacity-40">Global Power Distribution</h4>
-              <div className="space-y-3">
-                {[
-                  { label: 'USA', val: 95, color: 'bg-blue-500' },
-                  { label: 'China', val: 92, color: 'bg-red-500' },
-                  { label: 'EU', val: 85, color: 'bg-blue-400' },
-                  { label: 'Russia', val: 78, color: 'bg-gray-500' },
-                  { label: 'India', val: 75, color: 'bg-orange-500' }
-                ].map(p => (
-                  <div key={p.label} className="space-y-1">
-                    <div className="flex justify-between text-[9px] uppercase tracking-tighter">
-                      <span>{p.label}</span>
-                      <span>{p.val}%</span>
-                    </div>
-                    <div className="h-1 bg-luxury-gold/10 w-full overflow-hidden">
-                      <div className={`h-full ${p.color}`} style={{ width: `${p.val}%` }}></div>
-                    </div>
+          <div className="flex-1 overflow-y-auto p-5 space-y-5 no-scrollbar">
+            {/* Power Distribution */}
+            <div className="space-y-3">
+              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-geo-text-muted">Global Power</h4>
+              {[
+                { label: 'USA', val: 95, color: 'bg-geo-accent' },
+                { label: 'China', val: 92, color: 'bg-geo-danger' },
+                { label: 'EU', val: 85, color: 'bg-geo-cyan' },
+                { label: 'Russia', val: 78, color: 'bg-gray-500' },
+                { label: 'India', val: 75, color: 'bg-orange-500' }
+              ].map(p => (
+                <div key={p.label} className="space-y-1">
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-geo-text-dim font-medium">{p.label}</span>
+                    <span className="font-bold">{p.val}%</span>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="p-4 bg-luxury-gold/5 border border-luxury-gold/10 space-y-2">
-              <div className="text-[10px] font-bold text-luxury-gold uppercase tracking-widest">Analyst Note</div>
-              <p className="text-[10px] leading-relaxed opacity-60 italic">
-                "The current escalation in {newsFeed[0]?.titulo.split(' ')[0] || 'strategic sectors'} suggests a shift towards multipolar friction. 
-                Energy corridors in the Middle East remain the primary volatility vector."
-              </p>
-            </div>
-
-            <div className="space-y-4">
-              <h4 className="text-[10px] tracking-widest uppercase opacity-40">Supply Chain Integrity</h4>
-              <div className="space-y-3">
-                {[
-                  { label: 'Semiconductors', val: 65, status: 'Critical' },
-                  { label: 'Energy (LNG)', val: 82, status: 'Stable' },
-                  { label: 'Rare Earths', val: 45, status: 'Vulnerable' },
-                  { label: 'Food (Wheat)', val: 74, status: 'Alert' }
-                ].map(s => (
-                  <div key={s.label} className="flex items-center justify-between border-b border-luxury-gold/5 pb-2">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-bold">{s.label}</span>
-                      <span className={`text-[8px] uppercase ${s.status === 'Critical' ? 'text-red-500' : s.status === 'Vulnerable' ? 'text-orange-500' : s.status === 'Alert' ? 'text-yellow-500' : 'text-green-500'}`}>{s.status}</span>
-                    </div>
-                    <div className="text-xs font-mono">{s.val}%</div>
+                  <div className="h-1 bg-geo-border rounded-full overflow-hidden">
+                    <div className={`h-full ${p.color} rounded-full`} style={{ width: `${p.val}%` }}></div>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h4 className="text-[10px] tracking-widest uppercase opacity-40">Alert History</h4>
-              <div className="space-y-2">
-                {alertHistory.map((h, i) => (
-                  <div key={i} className="flex gap-3 text-[9px] border-l border-luxury-gold/20 pl-3 py-1">
-                    <span className="opacity-40 font-mono">{h.time}</span>
-                    <span className={`font-bold ${h.level === 'CRITICAL' ? 'text-red-500' : h.level === 'HIGH' ? 'text-orange-500' : 'text-luxury-gold'}`}>{h.level}</span>
-                  </div>
-                ))}
-                {alertHistory.length === 0 && <div className="text-[9px] opacity-20 italic">No recent alerts</div>}
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <h4 className="text-[10px] tracking-widest uppercase opacity-40">Market Volatility</h4>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-3 border border-luxury-gold/10 text-center">
-                  <div className="text-[8px] opacity-40 uppercase">Brent Oil</div>
-                  <div className="text-xs text-red-400">+$2.40</div>
                 </div>
-                <div className="p-3 border border-luxury-gold/10 text-center">
-                  <div className="text-[8px] opacity-40 uppercase">Gold (Spot)</div>
-                  <div className="text-xs text-green-400">+$15.20</div>
+              ))}
+            </div>
+
+            {/* Supply Chain */}
+            <div className="space-y-3">
+              <h4 className="text-[10px] font-semibold tracking-wider uppercase text-geo-text-muted">Supply Chain</h4>
+              {[
+                { label: 'Semiconductors', val: 65, status: 'Critical' },
+                { label: 'Energy (LNG)', val: 82, status: 'Stable' },
+                { label: 'Rare Earths', val: 45, status: 'Vulnerable' },
+                { label: 'Food (Wheat)', val: 74, status: 'Alert' }
+              ].map(s => (
+                <div key={s.label} className="flex items-center justify-between p-2.5 rounded-lg border border-geo-border/30 bg-geo-surface/30">
+                  <div>
+                    <div className="text-[10px] font-semibold">{s.label}</div>
+                    <div className={`text-[8px] uppercase font-bold ${s.status === 'Critical' ? 'text-geo-danger' : s.status === 'Vulnerable' ? 'text-orange-500' : s.status === 'Alert' ? 'text-geo-warn' : 'text-geo-success'}`}>{s.status}</div>
+                  </div>
+                  <div className="text-xs font-mono font-bold">{s.val}%</div>
                 </div>
+              ))}
+            </div>
+
+            {/* Market */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="p-3 rounded-xl border border-geo-border/30 bg-geo-surface/30 text-center">
+                <div className="text-[8px] text-geo-text-muted uppercase mb-1">Brent Oil</div>
+                <div className="text-sm font-bold text-geo-danger">+$2.40</div>
+              </div>
+              <div className="p-3 rounded-xl border border-geo-border/30 bg-geo-surface/30 text-center">
+                <div className="text-[8px] text-geo-text-muted uppercase mb-1">Gold</div>
+                <div className="text-sm font-bold text-geo-success">+$15.20</div>
               </div>
             </div>
           </div>
         </div>
 
-        <div className={`w-96 flex flex-col bg-luxury-gray/30 border border-luxury-gold/30 backdrop-blur-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-all duration-700 ${isUiMinimized ? 'translate-x-[120%] opacity-0' : 'translate-x-0 opacity-100'}`}>
-          <div className="p-6 border-b border-luxury-gold/10 flex items-center gap-3 font-light text-[10px] tracking-[0.3em] uppercase">
-            <MessageSquare size={14} className="text-luxury-gold" /> Global Comms
-            <div className={`w-1.5 h-1.5 rounded-full ml-auto ${wsStatus === 'connected' ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : wsStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`}></div>
+        {/* Chat */}
+        <div className={`w-96 flex flex-col bg-geo-surface/10 transition-all duration-700 ${isUiMinimized ? 'translate-x-[120%] opacity-0' : 'translate-x-0 opacity-100'}`}>
+          <div className="p-5 border-b border-geo-border/30 flex items-center gap-3 text-[11px] font-semibold tracking-wider uppercase text-geo-text-dim">
+            <MessageSquare size={15} className="text-geo-accent" /> Global Comms
+            <div className={`w-2 h-2 rounded-full ml-auto ${wsStatus === 'connected' ? 'status-live' : wsStatus === 'connecting' ? 'status-warn animate-pulse' : 'status-danger'}`}></div>
           </div>
-          <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 no-scrollbar">
             {chatMessages.map(m => (
-              <div key={m.id} className="flex flex-col gap-1">
+              <div key={m.id} className="flex flex-col gap-1 p-3 rounded-xl hover:bg-white/[0.02] transition-colors">
                 <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-bold uppercase tracking-tighter" style={{ color: m.color }}>{m.user}</span>
-                  <span className="text-[8px] opacity-30 font-mono">{new Date(m.timestamp).toLocaleTimeString()}</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: m.color }}>{m.user}</span>
+                  <span className="text-[8px] text-geo-text-muted font-mono">{new Date(m.timestamp).toLocaleTimeString()}</span>
                 </div>
-                <p className="text-xs font-light leading-relaxed opacity-80">{m.text}</p>
+                <p className="text-[12px] leading-relaxed text-geo-text-dim">{m.text}</p>
               </div>
             ))}
           </div>
-          <form onSubmit={sendChatMessage} className="p-6 border-t border-luxury-gold/10 bg-luxury-black">
+          <form onSubmit={sendChatMessage} className="p-4 border-t border-geo-border/30">
             <div className="relative">
               <input 
                 type="text" 
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="TRANSMIT SIGNAL..."
-                className="w-full bg-luxury-gray/50 border border-luxury-gold/20 p-3 pr-12 text-xs focus:outline-none focus:border-luxury-gold transition-colors placeholder:opacity-20 tracking-widest"
+                placeholder="Transmit signal..."
+                className="w-full bg-geo-surface border border-geo-border rounded-xl p-3 pr-12 text-xs focus:outline-none focus:border-geo-accent/50 focus:shadow-[0_0_15px_rgba(59,130,246,0.1)] transition-all placeholder:text-geo-text-muted/40 tracking-wider"
               />
-              <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-luxury-gold hover:scale-110 transition-transform">
+              <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 text-geo-accent hover:scale-110 transition-transform">
                 <Send size={16} />
               </button>
             </div>
@@ -1150,53 +1243,68 @@ export default function App() {
         </div>
       </div>
 
-      <div className={`h-6 bg-luxury-black border-t border-luxury-gold/10 flex items-center justify-between px-4 text-[9px] opacity-50 z-[800] transition-all duration-700 ${isUiMinimized ? 'translate-y-full opacity-0' : 'translate-y-0 opacity-100'}`}>
+      {/* ===== BOTTOM STATUS BAR ===== */}
+      <div className={`h-7 bg-geo-bg/80 backdrop-blur-md border-t border-geo-border/20 flex items-center justify-between px-5 text-[9px] text-geo-text-muted z-[800] transition-all duration-700 ${isUiMinimized ? 'translate-y-full opacity-0' : 'translate-y-0 opacity-100'}`}>
         <div className="flex items-center gap-6">
-          <div>GEOECONORBIT v1.2.0 | LUXURY INTELLIGENCE PROTOCOL</div>
+          <span className="font-display font-semibold tracking-wider">GEOECONORBIT v2.0</span>
           <div className="flex items-center gap-2">
-            <span className="opacity-40">SIGNAL:</span>
+            <span className="opacity-50">SIGNAL:</span>
             <div className="flex gap-0.5">
               {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className={`w-1 h-2 ${i <= 4 ? 'bg-green-500' : 'bg-green-500/20'}`}></div>
+                <div key={i} className={`w-1 h-2.5 rounded-sm ${i <= 4 ? 'bg-geo-success' : 'bg-geo-border'}`}></div>
               ))}
             </div>
           </div>
+          <span className="font-mono">{currentTime}</span>
         </div>
-        <div className="flex items-center gap-4">
-          <span>LAT: 25.0000 LNG: 15.0000</span>
-        </div>
+        <div className="font-mono tracking-wider">CLASSIFIED // AUTHORIZED ACCESS ONLY</div>
       </div>
+      {/* Feature 4: Country Comparison Tool */}
+      <AnimatePresence>
+        {selectedCountry && countryPanelOpen && (
+          <motion.div 
+            initial={{ x: 100, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 100, opacity: 0 }}
+            className="absolute top-20 right-6 z-[1500] pointer-events-none text-xs"
+          >
+            {/* Comparison Logic here if needed */}
+          </motion.div>
+        )}
 
-      <style>{`
-        .animate-marquee {
-          display: inline-block;
-          animation: marquee 60s linear infinite;
-        }
-        @keyframes marquee {
-          0% { transform: translateX(100%); }
-          100% { transform: translateX(-100%); }
-        }
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: rgba(212, 175, 55, 0.05);
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(212, 175, 55, 0.2);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(212, 175, 55, 0.4);
-        }
-        .custom-div-icon {
-          background: none !important;
-          border: none !important;
-        }
-      `}</style>
+        {/* Feature 1: Timeline Slider */}
+        {!isUiMinimized && (
+          <motion.div 
+            initial={{ y: 100, x: '-50%', opacity: 0 }}
+            animate={{ y: 0, x: '-50%', opacity: 1 }}
+            exit={{ y: 100, x: '-50%', opacity: 0 }}
+            className="absolute bottom-6 left-1/2 z-[1000] glass-panel-strong px-6 py-3 rounded-2xl flex items-center gap-6 shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-geo-accent/20"
+          >
+            <div className="flex flex-col gap-1">
+              <span className="text-[9px] uppercase tracking-[0.2em] text-geo-text-muted font-bold">Temporal Intel Window</span>
+              <div className="flex items-center gap-3">
+                {[1, 6, 24, 168, 720].map((h) => (
+                  <button
+                    key={h}
+                    onClick={() => setTimeFilter(h)}
+                    className={`px-3 py-1 rounded-lg text-[10px] font-bold tracking-wider transition-all ${
+                      timeFilter === h 
+                        ? 'bg-geo-accent text-white shadow-[0_0_15px_rgba(59,130,246,0.5)]' 
+                        : 'text-geo-text-muted hover:text-geo-text hover:bg-white/5'
+                    }`}
+                  >
+                    {h < 24 ? `${h}H` : h === 168 ? '7D' : h === 720 ? '30D' : '24H'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="w-px h-8 bg-geo-border/50"></div>
+            <div className="text-[10px] font-mono text-geo-accent animate-pulse uppercase tracking-wider">
+              Tracking {newsFeed.length} Events
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

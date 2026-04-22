@@ -52,10 +52,10 @@ export const MILITARY_BASES = [
 export const SHIPS = [
   {n:'USS Abraham Lincoln CVN-72',f:'🇺🇸',t:'Nuclear Carrier (Nimitz-class)',p:[56,26],
    d:'Persian Gulf strike group. Iran deterrence posture. CVW-9 air wing, ~90 aircraft. 6,000 crew.',
-   img:'https://upload.wikimedia.org/wikipedia/commons/thumb/d/db/USS_Abraham_Lincoln_%28CVN-72%29_underway_in_2021.jpg/320px-USS_Abraham_Lincoln_%28CVN-72%29_underway_in_2021.jpg'},
+   img:'/assets/abraham_lincoln.png'},
   {n:'USS Gerald R. Ford CVN-78',f:'🇺🇸',t:'Nuclear Carrier (Ford-class)',p:[30,35],
    d:'Eastern Mediterranean. Most advanced carrier ever built. EMALS catapult. Full battle group.',
-   img:'https://upload.wikimedia.org/wikipedia/commons/thumb/b/b6/Gerald_R._Ford_%28CVN-78%29_underway_in_the_Atlantic_Ocean%2C_8_April_2017.jpg/320px-Gerald_R._Ford_%28CVN-78%29_underway_in_the_Atlantic_Ocean%2C_8_April_2017.jpg'},
+   img:'/assets/gerald_ford.png'},
   {n:'USS Eisenhower CVN-69',f:'🇺🇸',t:'Nuclear Carrier (Nimitz-class)',p:[44,12.5],
    d:'Gulf of Aden. Active anti-Houthi strike operations. Operation Prosperity Guardian.'},
   {n:'USS Bataan LHD-5',f:'🇺🇸',t:'Amphibious Assault Ship',p:[43,14],
@@ -192,7 +192,7 @@ export const LEADERS: Record<string, any> = {
     leader:'Vladimir Putin', title:'President',
     party:'United Russia',
     ideology:'Nationalist-authoritarian / State capitalism', color:'#444444',
-    since:'2000 (with 2008−2012 Medvedev interlude)',
+    since:'2000 (with 2008-2012 Medvedev interlude)',
     gdp:'$2.06T (official, PPP $5.9T)', gdp_pc:'$14,200', debt_gdp:'19%', debt_abs:'$390B',
     reserves:'$600B (partly frozen by sanctions)',
     exports:'Oil ($200B), gas ($65B), weapons, wheat, metals, fertilizers',
@@ -364,6 +364,170 @@ export const LEADERS: Record<string, any> = {
     population:'105M',
     strategic_note:'World\u2019s most important waterway, Gaza buffer state'
   },
+  'AT': {
+    name:'Austria', cap:[16.4,48.2], flag:'🇦🇹',
+    leader:'Herbert Kickl', title:'Chancellor (PM)',
+    ideology:'Far-right coalition (FPÖ+ÖVP)', color:'#ff4444',
+    since:'January 2025',
+    gdp:'$516B', debt_gdp:'79% ($407B)', reserves:'$29B',
+    exports:'Machinery, vehicles, chemicals, tourism, steel',
+    main_resource:'Tourism (\u20ac40B), engineering (Anton Paar, AVL), steel (voestalpine)',
+    strategic_note:'First far-right government in modern era. 80% dependence on Russian gas.'
+  },
+  'IE': {
+    name:'Ireland', cap:[-6.3,53.3], flag:'🇮🇪',
+    leader:'Miche\u00e1l Martin', title:'Taoiseach',
+    ideology:'Centre / Liberal', color:'#10B981',
+    gdp:'$545B', debt_gdp:'44% ($240B)', reserves:'$12B',
+    exports:'Pharma ($90B - Pfizer/Roche), IT services (Google/Apple HQ)',
+    main_resource:'Pharma manufacturing hub, Big Tech EU HQ, 12.5% corporate tax',
+    strategic_note:'GDP inflated by multinationals (GNI* ~$280B). Corporate tax haven within EU.'
+  },
+  'IS': {
+    name:'Iceland', cap:[-22.0,64.1], flag:'🇮🇸',
+    leader:'Bjarni Benediktsson', title:'Prime Minister',
+    ideology:'Centre-right', color:'#3B82F6',
+    gdp:'$31.4B',
+    exports:'Aluminum, fish, tourism',
+    main_resource:'Geothermal energy, data centers (cheap green energy), fish',
+    strategic_note:'99% renewable electricity. Data center hub. Bitocin mining node.'
+  },
+  'LU': {
+    name:'Luxembourg', cap:[6.1,49.6], flag:'🇱🇺',
+    leader:'Luc Frieden', title:'Prime Minister',
+    ideology:'Conservative', color:'#3B82F6',
+    gdp:'$86.9B', gdp_pc:'$135,600', debt_gdp:'25%',
+    exports:'Steel (ArcelorMittal), investment funds, satellites (SES), fintech',
+    main_resource:'Investment fund center ($5.5T AUM), SES satellite company',
+    strategic_note:'World\u2019s highest GDP per capita (PPP). EU satellite TV capital.'
+  },
+  'MT': {
+    name:'Malta', cap:[14.5,35.9], flag:'🇲🇹',
+    leader:'Robert Abela', title:'Prime Minister',
+    ideology:'Social Democrat', color:'#ff6666',
+    gdp:'$20.9B',
+    exports:'Electronics, pharma, financial services',
+    main_resource:'Financial services, online gaming hub (30+ companies)',
+    strategic_note:'Online gambling capital of EU. Strategic Mediterranean chokepoint.'
+  },
+  'CY': {
+    name:'Cyprus', cap:[33.4,35.2], flag:'🇨🇾',
+    leader:'Nikos Christodoulides', title:'President',
+    ideology:'Centrist', color:'#3B82F6',
+    gdp:'$33.2B',
+    exports:'Financial services, tourism, ship management',
+    main_resource:'Ship management (3rd largest globally), offshore gas (Aphrodite field)',
+    strategic_note:'Divided island (North Turkish-controlled). Ship management giant.'
+  },
+  'HR': {
+    name:'Croatia', cap:[16.0,45.8], flag:'🇭🇷',
+    leader:'Andrej Plenkovi\u0107', title:'Prime Minister',
+    ideology:'Centre-right', color:'#3B82F6',
+    gdp:'$82.7B',
+    exports:'Vehicle parts, tourism ($15B), shipbuilding',
+    main_resource:'Tourism (Dalmatian coast), shipbuilding (Uljanik)',
+    strategic_note:'Joined Schengen+Euro 2023. NATO member. Adriatic tourist magnet.'
+  },
+  'MD': {
+    name:'Moldova', cap:[28.9,47.0], flag:'🇲🇩',
+    leader:'Maia Sandu', title:'President',
+    ideology:'Pro-EU / Liberal', color:'#aaaaff',
+    gdp:'$16.4B',
+    exports:'Wine, fruit, vegetables, clothing',
+    main_resource:'Agriculture (world class wine), Transnistria industrial zone',
+    strategic_note:'EU candidate 2022. Facing Russian pressure in Transnistria.'
+  },
+  'BY': {
+    name:'Belarus', cap:[27.6,53.9], flag:'🇧🇾',
+    leader:'Alexander Lukashenko', title:'President',
+    ideology:'Authoritarian-Statist', color:'#444444',
+    gdp:'$73.5B',
+    exports:'Potash (#2 world), petroleum products, machinery',
+    main_resource:'Potash (Belaruskali), manufacturing',
+    strategic_note:'Last European dictatorship. Close Russian military ally.'
+  },
+  'MN': {
+    name:'Mongolia', cap:[106.9,47.9], flag:'🇲🇳',
+    leader:'Oyun-Erdene Luvsannamsrai', title:'Prime Minister',
+    ideology:'Social Democrat', color:'#ff6666',
+    gdp:'$19.6B',
+    exports:'Coal ($5B), copper, gold, cashmere',
+    main_resource:'Coal (Tavan Tolgoi), copper+gold (Oyu Tolgoi)',
+    strategic_note:'Landlocked between Russia+China. Copper giant (Rio Tinto).'
+  },
+  'BD': {
+    name:'Bangladesh', cap:[90.4,23.7], flag:'🇧🇩',
+    leader:'Muhammad Yunus', title:'Interim Chief Advisor',
+    ideology:'Technocratic / Caretaker', color:'#10B981',
+    gdp:'$460B',
+    exports:'Garments $50B (#2 world), shrimp, jute',
+    main_resource:'Garment industry (Zara, H&M supply), natural gas',
+    strategic_note:'Interim government post-Hasina. World\u2019s garment factory.'
+  },
+  'JO': {
+    name:'Jordan', cap:[35.9,31.9], flag:'🇯🇴',
+    leader:'Abdullah II', title:'King',
+    ideology:'Monarchy', color:'#3B82F6',
+    gdp:'$51.4B',
+    exports:'Phosphate (#3 world), potash, textiles',
+    main_resource:'Phosphate+potash (Dead Sea), tourism (Petra)',
+    strategic_note:'Major buffer state. 2M+ Palestinian/Syrian refugees. US military hub.'
+  },
+  'LB': {
+    name:'Lebanon', cap:[35.5,33.9], flag:'🇱🇧',
+    leader:'Joseph Aoun', title:'President',
+    ideology:'Fragile coalition', color:'#64748B',
+    gdp:'$23.1B (collapsed)',
+    exports:'Jewelry, metals, food',
+    main_resource:'Offshore gas (Block 9 potential)',
+    strategic_note:'Financial collapse 2019. Hezbollah state-within-state. Israel war 2024.'
+  },
+  'GU_SUPER': {
+    name:'Guinea', cap:[-13.7,9.6], flag:'🇬🇳',
+    leader:'Mamadi Doumbouya', title:'Junta Leader',
+    ideology:'Military Junkta', color:'#444444',
+    gdp:'$19.9B',
+    exports:'Bauxite (#1 world), gold, diamonds',
+    main_resource:'Bauxite superpower. Simandou iron ore (world\u2019s largest untapped).',
+    strategic_note:'Iron ore project Simandou transformational ($15B+ Chinese/Rio Tinto project).'
+  },
+  'GY': {
+    name:'Guyana', cap:[-58.2,6.8], flag:'🇬🇾',
+    leader:'Irfaan Ali', title:'President',
+    ideology:'Multi-ethnic / Centre', color:'#10B981',
+    gdp:'$24.0B (exploding)',
+    exports:'Crude oil (ExxonMobil)',
+    main_resource:'Stabroek Block Oil (11B+ barrels)',
+    strategic_note:'World\u2019s fastest growing economy (60%+ GDP growth/yr). Oil transformational.'
+  },
+  'UY': {
+    name:'Uruguay', cap:[-56.2,-34.9], flag:'🇺🇾',
+    leader:'Yamand\u00fa Orsi', title:'President',
+    ideology:'Centre-left', color:'#ff6666',
+    gdp:'$77.2B', gdp_pc:'$22,000',
+    exports:'Soy, beef, cellulose (UPM)',
+    main_resource:'Premium beef, cellulose pulp mills',
+    strategic_note:'Latin America\u2019s most stable democracy. 95% renewable electricity.'
+  },
+  'BO': {
+    name:'Bolivia', cap:[-68.1,-16.5], flag:'🇧🇴',
+    leader:'Luis Arce', title:'President',
+    ideology:'Socialist', color:'#cc0000',
+    gdp:'$45.4B',
+    exports:'Gas (declining), lithium, minerals',
+    main_resource:'Lithium (world\u2019s largest reserves \u2014 21M tons)',
+    strategic_note:'Lithium nationalization policy. Gas depletion crisis.'
+  },
+  'PE': {
+    name:'Peru', cap:[-77.0,-12.0], flag:'🇵🇪',
+    leader:'Dina Boluarte', title:'President',
+    ideology:'Fragile coalition', color:'#64748B',
+    gdp:'$268B',
+    exports:'Copper (#2 world), gold, silver, zinc',
+    main_resource:'Mining (copper, gold, silver), fish, coffee',
+    strategic_note:'Political chaos (6 presidents in 5 years). Chancay megaport (China-funded).'
+  }
+
 };
 
 export const FINANCIALS: Record<string, any> = {
@@ -590,3 +754,44 @@ export const SPACE_CENTERS = [
   { name: "Tanegashima", co: "Japan", p: [130.9, 30.4], t: "Space Center", d: "JAXA's primary launch facility." },
   { name: "Satish Dhawan", co: "India", p: [80.2, 13.7], t: "Space Centre", d: "ISRO's primary launch site." }
 ];
+
+export const SWF_DATA = [
+  { name: "GPFG Norway", value: "$1.73T", focus: "ESG/Global", location: "Oslo" },
+  { name: "ADIA UAE", value: "$993B", focus: "Oil Wealth", location: "Abu Dhabi" },
+  { name: "SAFE China", value: "$996B", focus: "Forex", location: "Beijing" },
+  { name: "KIA Kuwait", value: "$803B", focus: "Oldest SWF", location: "Kuwait" },
+  { name: "GIC Singapore", value: "$770B", focus: "Global Investment", location: "Singapore" },
+  { name: "PIF Saudi Arabia", value: "$925B", focus: "Vision 2030", location: "Riyadh" }
+];
+
+export const GOLD_RESERVES = [
+  { co: "USA", tons: 8133, location: "Fort Knox" },
+  { co: "Germany", tons: 3352, location: "Frankfurt" },
+  { co: "Italy", tons: 2452, location: "Rome" },
+  { co: "France", tons: 2437, location: "Paris" },
+  { co: "Russia", tons: 2315, location: "Moscow" },
+  { co: "China", tons: 2250, location: "Beijing" }
+];
+
+export const SANCTIONS = [
+  { target: "Russia", by: ["USA", "EU", "UK", "Japan"], reason: "Ukraine Invasion", impact: "High" },
+  { target: "Iran", by: ["USA", "UN", "EU"], reason: "Nuclear Program", impact: "Severe" },
+  { target: "N.Korea", by: ["UN", "USA"], reason: "ICBM Tests", impact: "Total" }
+];
+
+export const TRADE_FLOWS = [
+  { from: "China", to: "ASEAN", value: "$975B", type: "Largest Partner" },
+  { from: "USA", to: "EU", value: "$900B", type: "Strategic" },
+  { from: "USA", to: "Canada", value: "$850B", type: "USMCA" },
+  { from: "USA", to: "Mexico", value: "$800B", type: "USMCA" }
+];
+
+export const ENERGY_TRANSITION = {
+  LEADERS: ["Iceland", "Norway", "Paraguay", "Uruguay", "Costa Rica"],
+  DEPENDENT: ["Kuwait", "Qatar", "Saudi Arabia", "Iraq", "Russia"]
+};
+
+export const AI_ARMS_RACE = {
+  LEADERS: ["USA", "China"],
+  CHOKEPOINTS: ["TSMC (Taiwan)", "ASML (Netherlands)", "Nvidia (USA)"]
+};

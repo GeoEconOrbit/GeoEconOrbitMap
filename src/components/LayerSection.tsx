@@ -24,28 +24,44 @@ export const LayerSection = React.memo(({
   onToggleCollapse 
 }: LayerSectionProps) => {
   return (
-    <div className="border-b border-luxury-gold/5 pb-2">
+    <div className="pb-2">
       <div 
-        className="flex items-center justify-between cursor-pointer mb-2 group"
+        className="flex items-center justify-between cursor-pointer mb-3 group px-1"
         onClick={onToggleCollapse}
       >
-        <h3 className="text-[10px] font-light opacity-30 tracking-[0.2em] uppercase group-hover:opacity-60 transition-opacity">{title}</h3>
-        <ChevronDown size={10} className={`opacity-20 transition-transform duration-300 ${collapsed ? '-rotate-90' : ''}`} />
+        <h3 className="text-[10px] font-semibold text-geo-text-muted tracking-[0.2em] uppercase group-hover:text-geo-accent transition-colors duration-300">{title}</h3>
+        <ChevronDown size={12} className={`text-geo-text-muted transition-all duration-300 group-hover:text-geo-accent ${collapsed ? '-rotate-90' : ''}`} />
       </div>
       
       {!collapsed && (
-        <div className="space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-300">
+        <div className="space-y-1">
           {items.map((item) => (
             <div 
               key={item.id}
               onClick={() => toggle(item.id)}
-              className={`flex items-center justify-between p-2.5 cursor-pointer transition-all duration-300 ${activeLayers[item.id] ? 'bg-luxury-gold/10 border border-luxury-gold/20' : 'hover:bg-luxury-bone/5 border border-transparent'}`}
+              className={`flex items-center justify-between p-2.5 rounded-xl cursor-pointer transition-all duration-300 group/item ${
+                activeLayers[item.id] 
+                  ? 'bg-geo-accent/10 border border-geo-accent/20 shadow-[0_0_15px_rgba(59,130,246,0.08)]' 
+                  : 'hover:bg-white/[0.03] border border-transparent'
+              }`}
             >
               <div className="flex items-center gap-3">
-                <item.icon size={14} className={activeLayers[item.id] ? 'text-luxury-gold' : 'opacity-30'} />
-                <span className={`text-[11px] font-light tracking-wide ${activeLayers[item.id] ? 'text-luxury-bone' : 'text-luxury-bone/40'}`}>{item.label}</span>
+                <div className={`p-1.5 rounded-lg transition-all duration-300 ${
+                  activeLayers[item.id] 
+                    ? 'bg-geo-accent/20 text-geo-accent' 
+                    : 'text-geo-text-muted group-hover/item:text-geo-text-dim'
+                }`}>
+                  <item.icon size={14} />
+                </div>
+                <span className={`text-[11px] font-medium tracking-wide transition-colors duration-300 ${
+                  activeLayers[item.id] ? 'text-geo-text' : 'text-geo-text-muted group-hover/item:text-geo-text-dim'
+                }`}>{item.label}</span>
               </div>
-              <div className={`w-1 h-1 rounded-full ${activeLayers[item.id] ? 'bg-luxury-gold shadow-[0_0_8px_#D4AF37]' : 'bg-luxury-bone/10'}`}></div>
+              <div className={`w-2 h-2 rounded-full transition-all duration-300 ${
+                activeLayers[item.id] 
+                  ? 'bg-geo-accent shadow-[0_0_8px_rgba(59,130,246,0.6)]' 
+                  : 'bg-geo-border'
+              }`}></div>
             </div>
           ))}
         </div>

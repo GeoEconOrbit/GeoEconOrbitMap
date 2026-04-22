@@ -32,11 +32,15 @@ export const renderStaticLayers = (
     const icon = L.divIcon({
       className: 'custom-div-icon',
       html: iconTheme === 'emoji' 
-        ? `<div class="text-lg drop-shadow-[0_0_5px_rgba(0,212,255,0.5)]">🛳️</div>`
-        : `<div class="w-7 h-7 text-luxury-gold drop-shadow-[0_0_5px_rgba(212,175,55,0.3)]" style="transform: rotate(${heading}deg)">
-            ${getShipIcon(ship.t, '#d4af37')}
-          </div>`,
-      iconSize: [28, 28]
+        ? `<div class="text-2xl drop-shadow-[0_0_8px_rgba(0,212,255,0.8)] relative">
+             <div class="pulse-ring absolute inset-0 scale-150"></div>
+             🛳️
+           </div>`
+        : `<div class="w-10 h-10 text-luxury-gold drop-shadow-[0_0_10px_rgba(212,175,55,0.6)] relative" style="transform: rotate(${heading}deg)">
+             <div class="pulse-ring absolute inset-0 scale-125 opacity-40"></div>
+             ${getShipIcon(ship.t, '#d4af37')}
+           </div>`,
+      iconSize: [40, 40]
     });
     L.marker([ship.p[1], ship.p[0]], { icon })
       .bindPopup(`

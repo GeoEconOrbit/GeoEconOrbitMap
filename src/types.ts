@@ -5,7 +5,8 @@ export interface NewsItem {
   hora: string;
   urgente: boolean;
   coords?: [number, number];
-  type?: 'attack' | 'breaking' | 'normal';
+  type?: 'attack' | 'breaking' | 'normal' | 'nuclear' | 'economic' | 'political';
+  severity?: number;
 }
 
 export interface Aircraft {
