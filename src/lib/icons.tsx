@@ -37,6 +37,16 @@ export const SHIP_ICONS = {
       <path d="M35 20 L50 35" />
       <circle cx="30" cy="30" r="2" />
     </svg>
+  `,
+  TANKER: `
+    <svg viewBox="0 0 100 60" class="w-full h-full fill-none stroke-current stroke-[2]">
+      <path d="M5 45 L95 45 L90 55 L10 55 Z" />
+      <rect x="20" y="30" width="50" height="15" rx="5" />
+      <path d="M75 25 L90 25 L90 45 L75 45 Z" />
+      <path d="M80 15 L80 25" />
+      <path d="M25 30 C 25 20, 45 20, 45 30" />
+      <path d="M50 30 C 50 20, 70 20, 70 30" />
+    </svg>
   `
 };
 
@@ -75,6 +85,7 @@ export const getShipIcon = (type: string, color: string = 'currentColor') => {
   const t = type.toUpperCase();
   let svg = SHIP_ICONS.CARGO;
   if (t.includes('CARRIER')) svg = SHIP_ICONS.CARRIER;
+  else if (t.includes('TANKER') || t.includes('OIL') || t.includes('FUEL')) svg = SHIP_ICONS.TANKER;
   else if (t.includes('DESTROYER') || t.includes('FRIGATE') || t.includes('WARSHIP') || t.includes('NAVY')) svg = SHIP_ICONS.WARSHIP;
   else if (t.includes('FISHING') || t.includes('TRAWLER') || t.includes('TUG')) svg = SHIP_ICONS.FISHING;
   

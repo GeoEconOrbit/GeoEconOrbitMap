@@ -222,8 +222,30 @@ async function startServer() {
         .filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
 
       res.json({ news: uniqueResults });
-    } catch (error) {
-      res.status(500).json({ news: [] });
+  app.get("/api/flights", async (req, res) => {
+    try {
+      // Global bounding box for high-level saturation
+      const url = "https://opensky-network.org/api/states/all";
+      const flightRes = await fetch(url);
+      if (flightRes.ok) {
+        const data = await flightRes.json();
+        // Limit to 400 flights for performance
+        const flights = (data.states || []).slice(0, 400).map((s: any) => ({
+          icao: s[0],
+          callsign: s[1]?.trim() || 'UNK',
+          country: s[2],
+          lon: s[5],
+          lat: s[6],
+          alt: s[7],
+          heading: s[10],
+          velocity: s[9]
+        }));
+        res.json({ flights });
+      } else {
+        res.status(500).json({ flights: [] });
+      }
+    } catch (e) {
+      res.status(500).json({ flights: [] });
     }
   });
 
