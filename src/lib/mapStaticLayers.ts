@@ -26,35 +26,53 @@ export const renderStaticLayers = (
     if (l && typeof l.clearLayers === 'function') l.clearLayers();
   });
 
-  // Warships
+  // Specialized Maritime Layers
+  const warships = layers.warships as L.LayerGroup;
+  const carriers = layers.carriers as L.LayerGroup;
+  const tankers = layers.tankers as L.LayerGroup;
+  const cargo = layers.cargo as L.LayerGroup;
+
   SHIPS.forEach(ship => {
     const heading = (ship as any).heading || 0;
+    const isCarrier = ship.t.toLowerCase().includes('carrier');
+    const isTanker = ship.t.toLowerCase().includes('tanker');
+    const isCargo = (ship.t.toLowerCase().includes('cargo') || ship.t.toLowerCase().includes('container'));
+    
+    // Choose the target layer based on type
+    let targetLayer = warships;
+    if (isCarrier) targetLayer = carriers;
+    else if (isTanker) targetLayer = tankers;
+    else if (isCargo) targetLayer = cargo;
+
+    if (!targetLayer) return;
+
+    const iconHtml = iconTheme === 'emoji' 
+      ? `<div class="text-2xl drop-shadow-[0_0_8px_rgba(0,212,255,0.8)] relative">
+           ${isCarrier ? '⚓' : isTanker ? '🛢️' : isCargo ? '📦' : '🛳️'}
+         </div>`
+      : `<div class="w-10 h-10 ${isTanker ? 'text-amber-500' : isCargo ? 'text-green-500' : isCarrier ? 'text-geo-accent' : 'text-luxury-gold'} drop-shadow-[0_0_10px_rgba(212,175,55,0.4)] relative" style="transform: rotate(${heading}deg)">
+           ${getShipIcon(ship.t, isTanker ? '#f59e0b' : isCargo ? '#10b981' : isCarrier ? '#3b82f6' : '#d4af37')}
+         </div>`;
+
     const icon = L.divIcon({
       className: 'custom-div-icon',
-      html: iconTheme === 'emoji' 
-        ? `<div class="text-2xl drop-shadow-[0_0_8px_rgba(0,212,255,0.8)] relative">
-             <div class="pulse-ring absolute inset-0 scale-150"></div>
-             🛳️
-           </div>`
-        : `<div class="w-10 h-10 text-luxury-gold drop-shadow-[0_0_10px_rgba(212,175,55,0.6)] relative" style="transform: rotate(${heading}deg)">
-             <div class="pulse-ring absolute inset-0 scale-125 opacity-40"></div>
-             ${getShipIcon(ship.t, '#d4af37')}
-           </div>`,
+      html: iconHtml,
       iconSize: [40, 40]
     });
+
     L.marker([ship.p[1], ship.p[0]], { icon })
       .bindPopup(`
         <div class="p-2">
           ${ship.img ? `<img src="${ship.img}" class="w-full h-32 object-cover mb-2 rounded" referrerPolicy="no-referrer">` : ''}
           <div class="flex items-center gap-2 mb-1">
-            <span class="text-xl">${ship.f}</span>
+            <span class="text-xl">${ship.f || '🏳️'}</span>
             <h3 class="font-bold text-intel-gold">${ship.n}</h3>
           </div>
-          <p class="text-xs opacity-80 mb-1">${ship.t}</p>
-          <p class="text-sm">${ship.d}</p>
+          <p class="text-[10px] uppercase font-bold text-geo-text-muted mb-2 tracking-widest">${ship.t}</p>
+          <p class="text-sm leading-relaxed">${ship.d}</p>
         </div>
       `)
-      .addTo(layers.warships);
+      .addTo(targetLayer);
   });
 
   // Bases

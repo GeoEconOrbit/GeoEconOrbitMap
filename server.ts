@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import fs from "fs";
+import Parser from "rss-parser";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -125,21 +126,99 @@ async function startServer() {
     }
   });
 
-  // API Proxy for GDELT
-  let lastGdeltFetch = 0;
-  app.get("/api/gdelt", async (req, res) => {
+  // Autonomous News Engine
+  const parser = new Parser({
+    customFields: {
+      item: ['media:content', 'description'],
+    }
+  });
+
+  const NEWS_SOURCES = [
+    { name: 'Reuters World', url: 'https://www.reutersagency.com/en/rss/' },
+    { name: 'BBC World News', url: 'https://feeds.bbci.co.uk/news/world/rss.xml' },
+    { name: 'Defense News', url: 'https://www.defensenews.com/arc/outboundfeeds/rss/' },
+    { name: 'El País Int', url: 'https://feeds.elpais.com/mrss-s/pages/ep/site/elpais.com/section/internacional/portada' }
+  ];
+
+  // Capital/Region Coordinates for Geolocation fallback
+  const REGION_COORDS: Record<string, [number, number]> = {
+    'Ukraine': [31.2, 48.4], 'Russia': [105.3, 61.5], 'Iran': [53.7, 32.4], 'Israel': [34.9, 31.0], 
+    'Lebanon': [35.9, 33.9], 'Syria': [39.0, 34.8], 'Taiwan': [121.0, 23.7], 'China': [104.2, 35.9], 
+    'USA': [-95.7, 37.1], 'Korea': [127.8, 35.9], 'Yemen': [48.5, 15.6], 'Gaza': [34.4, 31.5],
+    'Madrid': [-3.7, 40.4], 'London': [-0.1, 51.5], 'Washington': [-77, 38.9], 'Beijing': [116.4, 39.9],
+    'Brussels': [4.3, 50.8], 'Paris': [2.3, 48.8], 'Berlin': [13.4, 52.5]
+  };
+
+  app.get("/api/news", async (req, res) => {
     try {
       const now = Date.now();
-      if (lastGdeltFetch !== 0 && now - lastGdeltFetch < 5000) return res.json({ articles: [] });
-      lastGdeltFetch = now;
-      const query = "attack conflict missile military war sourcelang:eng";
-      const url = `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(query)}&mode=artlist&maxrecords=50&sort=DateDesc&format=json&timespan=360min`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("GDELT fetch failed");
-      const data = await response.json();
-      res.json(data);
-    } catch (error: any) {
-      res.json({ articles: [] });
+      const cutoff = now - (24 * 60 * 60 * 1000); // 24 hours ago
+      let results: any[] = [];
+
+      // 1. Fetch GDELT GeoJSON (High geolocation precision)
+      try {
+        const query = "conflict attack missile military war";
+        const gdeltGeoUrl = `https://api.gdeltproject.org/api/v2/geo/geo?query=${encodeURIComponent(query)}&format=geojson`;
+        const gdeltRes = await fetch(gdeltGeoUrl);
+        if (gdeltRes.ok) {
+          const data = await gdeltRes.json();
+          if (data.features) {
+            const gdeltItems = data.features.map((f: any) => ({
+              id: `gdelt-${f.properties.url}`,
+              titulo: f.properties.name || "Geopolitical Incident",
+              desc: `Reported events in this area. Impact level: ${f.properties.count}`,
+              fuente: 'GDELT GEO',
+              hora: new Date(now).toLocaleTimeString(),
+              coords: f.geometry.coordinates,
+              type: 'intel',
+              timestamp: now
+            }));
+            results = [...results, ...gdeltItems];
+          }
+        }
+      } catch (e) { console.error("GDELT Geo error", e); }
+
+      // 2. Fetch RSS Feeds
+      for (const source of NEWS_SOURCES) {
+        try {
+          const feed = await parser.parseURL(source.url);
+          const items = feed.items.slice(0, 10).map(item => {
+            // Basic Geolocation fallback based on title/content keywords
+            let coords = null;
+            const fullText = (item.title + " " + item.contentSnippet).toLowerCase();
+            for (const [region, coord] of Object.entries(REGION_COORDS)) {
+              if (fullText.includes(region.toLowerCase())) {
+                coords = coord;
+                break;
+              }
+            }
+            // Default to Brussels (NATO/EU hub) if no match found
+            if (!coords) coords = REGION_COORDS["Brussels"];
+
+            return {
+              id: item.guid || item.link,
+              titulo: item.title,
+              desc: item.contentSnippet || item.description,
+              fuente: source.name,
+              hora: new Date(item.pubDate || now).toLocaleTimeString(),
+              coords: coords,
+              type: 'news',
+              link: item.link,
+              timestamp: new Date(item.pubDate || now).getTime()
+            };
+          });
+          results = [...results, ...items];
+        } catch (e) { console.error(`RSS Error ${source.name}`, e); }
+      }
+
+      // Filter by 24h and remove duplicates
+      const uniqueResults = results
+        .filter(item => item.timestamp > cutoff)
+        .filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
+
+      res.json({ news: uniqueResults });
+    } catch (error) {
+      res.status(500).json({ news: [] });
     }
   });
 

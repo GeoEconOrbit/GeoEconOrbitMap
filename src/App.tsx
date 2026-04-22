@@ -93,6 +93,9 @@ export default function App() {
     civil_air: true,
     mil_air: true,
     warships: true,
+    carriers: true,
+    tankers: true,
+    cargo: true,
     bases: true,
     oil: false,
     wheat: false,
@@ -102,7 +105,6 @@ export default function App() {
     connections: false,
     resources: false,
     ideology: false,
-    live_ships: true,
     nuclear: false,
     cyber: false,
     satellites: false,
@@ -295,7 +297,10 @@ export default function App() {
       connections: L.layerGroup(),
       resources: L.layerGroup(),
       ideology: L.layerGroup(),
-      live_ships: L.layerGroup().addTo(map),
+      live_ships: L.layerGroup(),
+      carriers: L.layerGroup().addTo(map),
+      tankers: L.layerGroup().addTo(map),
+      cargo: L.layerGroup().addTo(map),
       nuclear: L.markerClusterGroup({ 
         showCoverageOnHover: false,
         maxClusterRadius: 35
@@ -493,73 +498,74 @@ export default function App() {
         addLog('News feed update returned empty result.', 'warn');
         return;
       }
-      addLog(`News feed updated: ${allNews.length} items received.`, 'info');
+      addLog(`News update complete: ${allNews.length} items geolocated.`, 'info');
 
       setNewsFeed(allNews);
-      setStats(prev => ({ ...prev, news: allNews.length, attacks: allNews.filter(n => n.type === 'attack').length }));
+      setStats(prev => ({ ...prev, news: allNews.length }));
 
       const layer = layersRef.current.news as L.MarkerClusterGroup;
-      const attackLayer = layersRef.current.attacks as L.LayerGroup;
-      if (!layer || !attackLayer) return;
-
+      if (!layer) return;
       layer.clearLayers();
-      attackLayer.clearLayers();
 
-      const coordCounts: Record<string, number> = {};
+      // Group news by location string key
+      const grouped: Record<string, NewsItem[]> = {};
+      allNews.forEach(item => {
+        if (!item.coords) return;
+        const key = `${item.coords[0].toFixed(2)},${item.coords[1].toFixed(2)}`;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(item);
+      });
 
-      allNews.forEach((item) => {
-        let coords = item.coords;
-        if (!coords) {
-          coords = findCoordsForNews(item.titulo + ' ' + item.desc);
-        }
+      Object.entries(grouped).forEach(([key, items]) => {
+        const coords = key.split(',').map(Number);
+        const isMulti = items.length > 1;
+        const mainItem = items[0];
 
-        if (coords) {
-          const key = `${coords[0]},${coords[1]}`;
-          const count = coordCounts[key] || 0;
-          coordCounts[key] = count + 1;
+        const icon = L.divIcon({
+          className: 'custom-div-icon',
+          html: iconTheme === 'emoji'
+            ? `<div class="relative scale-110">
+                <div class="text-2xl drop-shadow-[0_0_10px_rgba(233,195,73,0.8)]">
+                  ${isMulti ? '🗂️' : (mainItem.type === 'intel' ? '📰' : '🌎')}
+                </div>
+                ${isMulti ? `<div class="absolute -top-1 -right-1 bg-geo-accent text-white text-[8px] px-1 rounded-full font-bold shadow-lg">${items.length}</div>` : ''}
+               </div>`
+            : `<div class="relative p-1">
+                <div class="w-2.5 h-2.5 rounded-full ${mainItem.type === 'intel' ? 'bg-geo-accent' : 'bg-luxury-gold'} shadow-[0_0_10px_rgba(6,182,212,0.5)]"></div>
+                ${isMulti ? `<div class="absolute -top-2 -right-2 bg-geo-accent text-white text-[7px] px-1 rounded-full font-bold">${items.length}</div>` : ''}
+               </div>`,
+          iconSize: [32, 42]
+        });
 
-          const jittered = jitter(coords, count);
-          const isAttack = item.type === 'attack';
-          
-          const iconHtml = isAttack 
-            ? `<div class="text-2xl relative"><div class="attack-pulse absolute inset-0"></div>💥</div>`
-            : item.urgente ? `⚠️` : `📰`;
+        const popupContent = `
+          <div class="max-w-[280px] max-h-[350px] flex flex-col gap-3">
+            <div class="border-b border-geo-border/40 pb-2 mb-1 flex items-center justify-between">
+              <span class="text-[9px] font-black uppercase tracking-[0.2em] text-geo-accent">${isMulti ? 'Global Intel Digest' : 'Local Report'}</span>
+              <span class="text-[8px] text-geo-text-muted font-mono">${mainItem.hora}</span>
+            </div>
+            <div class="overflow-y-auto pr-1 space-y-4 no-scrollbar">
+              ${items.map(it => `
+                <div class="group border-l-2 border-geo-accent/20 pl-3 py-1 hover:border-geo-accent transition-all">
+                  <h4 class="font-bold text-geo-text text-[11px] leading-snug mb-1">${it.titulo}</h4>
+                  <p class="text-[10px] text-geo-text-dim/80 line-clamp-3 leading-relaxed mb-2">${it.desc}</p>
+                  <div class="flex items-center gap-3 text-[8px] text-geo-text-muted uppercase font-bold tracking-widest">
+                    <span>${it.fuente}</span>
+                    ${it.link ? `<a href="${it.link}" target="_blank" class="text-geo-accent">View Report →</a>` : ''}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
 
-          const icon = L.divIcon({
-            className: 'custom-div-icon',
-            html: iconTheme === 'emoji'
-              ? `<div class="text-2xl drop-shadow-[0_0_8px_rgba(233,195,73,0.8)]">${iconHtml}</div>`
-              : iconTheme === 'tactical'
-                ? `<div class="w-3 h-3 ${isAttack ? 'bg-red-500' : 'bg-intel-gold'} border border-white rounded-full"></div>`
-                : `<div class="w-2 h-2 ${isAttack ? 'bg-luxury-gold' : 'bg-luxury-bone'} rounded-full shadow-[0_0_5px_rgba(212,175,55,0.5)]"></div>`,
-            iconSize: [32, 32]
-          });
-
-          L.marker([jittered[1], jittered[0]], { icon })
-            .bindPopup(`
-              <div class="p-2 max-w-[250px]">
-                <h3 class="font-bold text-intel-gold mb-1">${item.titulo}</h3>
-                <p class="text-xs opacity-80 mb-2">${item.hora} | ${item.fuente}</p>
-                <p class="text-sm line-clamp-3">${item.desc}</p>
-              </div>
-            `)
-            .addTo(layer);
-
-          if (isAttack) {
-            L.circle([jittered[1], jittered[0]], {
-              radius: 70000,
-              color: '#ef404c',
-              fillColor: '#ef404c',
-              fillOpacity: 0.1,
-              weight: 1
-            }).addTo(attackLayer);
-          }
-        }
+        L.marker([coords[1], coords[0]], { icon })
+          .bindPopup(popupContent, { minWidth: 260 })
+          .addTo(layer);
       });
     } catch (e) {
       console.error('News fetch failed', e);
     }
-  }, [iconTheme, findCoordsForNews, jitter]);
+  }, [iconTheme, addLog]);
 
   const fetchAircraft = useCallback(async () => {
     addLog('Scanning for tactical air assets...', 'info');
@@ -712,7 +718,7 @@ export default function App() {
   }, [activeLayers.risk_heatmap, newsFeed]);
 
   return (
-    <div className="relative h-full w-full flex flex-col text-geo-text bg-geo-bg font-sans overflow-hidden">
+    <div className="relative h-screen w-screen flex flex-col text-geo-text bg-geo-bg font-sans overflow-hidden">
       {/* Restore UI Button (Zen Mode) */}
       <AnimatePresence>
         {isUiMinimized && (
@@ -757,7 +763,7 @@ export default function App() {
             initial={{ y: -100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -100, opacity: 0 }}
-            className="h-16 glass-panel-strong mx-4 mt-3 rounded-2xl flex items-center justify-between px-6 z-[800]"
+            className="h-16 glass-panel-strong w-full flex items-center justify-between px-8 z-[800] border-b border-geo-border/30"
           >
         {/* Left: Brand + Search */}
         <div className="flex items-center gap-5">
@@ -1047,11 +1053,18 @@ export default function App() {
               <LayerSection title="ASSETS" activeLayers={activeLayers} toggle={toggleLayer} collapsed={collapsedSections['ASSETS']} onToggleCollapse={() => setCollapsedSections(prev => ({...prev, ASSETS: !prev.ASSETS}))} items={[
                 { id: 'civil_air', label: 'Civilian Air', icon: Plane },
                 { id: 'mil_air', label: 'Strategic Air', icon: Shield, color: 'text-geo-accent' },
-                { id: 'warships', label: 'Naval Groups', icon: Ship, color: 'text-geo-accent' },
-                { id: 'live_ships', label: 'AIS Vessels', icon: Anchor },
+                { id: 'mil_air', label: 'Strategic Air', icon: Shield, color: 'text-geo-accent' },
                 { id: 'bases', label: 'Command Posts', icon: Anchor },
                 { id: 'satellites', label: 'Orbital Recon', icon: SatelliteIcon, color: 'text-geo-cyan' },
                 { id: 'space', label: 'Spaceports', icon: Rocket, color: 'text-orange-400' }
+              ]} />
+
+              <LayerSection title="MARITIME" activeLayers={activeLayers} toggle={toggleLayer} collapsed={collapsedSections['MARITIME']} onToggleCollapse={() => setCollapsedSections(prev => ({...prev, MARITIME: !prev.MARITIME}))} items={[
+                { id: 'carriers', label: 'Carrier Groups', icon: Anchor, color: 'text-geo-accent' },
+                { id: 'warships', label: 'Combat Fleets', icon: Shield },
+                { id: 'tankers', label: 'Energy Tankers', icon: Droplets, color: 'text-amber-500' },
+                { id: 'cargo', label: 'Global Cargo', icon: Ship, color: 'text-green-500' },
+                { id: 'chokepoints', label: 'Strategic Straits', icon: Crosshair }
               ]} />
 
               <LayerSection title="RESOURCES" activeLayers={activeLayers} toggle={toggleLayer} collapsed={collapsedSections['RESOURCES']} onToggleCollapse={() => setCollapsedSections(prev => ({...prev, RESOURCES: !prev.RESOURCES}))} items={[
@@ -1299,7 +1312,7 @@ export default function App() {
             initial={{ y: 100, x: '-50%', opacity: 0 }}
             animate={{ y: 0, x: '-50%', opacity: 1 }}
             exit={{ y: 100, x: '-50%', opacity: 0 }}
-            className="absolute bottom-6 left-1/2 z-[1000] glass-panel-strong px-6 py-3 rounded-2xl flex items-center gap-6 shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-geo-accent/20"
+            className="absolute bottom-0 left-1/2 -translate-x-1/2 z-[1000] glass-panel-strong px-10 py-3 rounded-t-2xl flex items-center gap-8 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] border-x border-t border-geo-accent/20"
           >
             <div className="flex flex-col gap-1">
               <span className="text-[9px] uppercase tracking-[0.2em] text-geo-text-muted font-bold">Temporal Intel Window</span>

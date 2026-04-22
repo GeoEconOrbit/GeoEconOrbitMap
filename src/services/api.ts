@@ -30,21 +30,15 @@ export const processIntel = (raw: any): NewsItem => {
 
 export const fetchNews = async (): Promise<NewsItem[]> => {
   try {
-    const gdeltRes = await fetch('/api/gdelt');
-    if (gdeltRes.ok) {
-      const data = await gdeltRes.json();
-      return (data.articles || [])
-        .filter((a: any) => {
-          const nonEnglish = /[^\x00-\x7F]/.test(a.title);
-          return !nonEnglish && a.title.length > 10;
-        })
-        .map((a: any) => processIntel({
-          titulo: a.title,
-          desc: a.source || 'Intelligence Report',
-          fuente: 'GDELT INTELLIGENCE',
-          hora: new Date().toLocaleTimeString(),
-          coords: a.coords // if available
-        }));
+    const res = await fetch('/api/news');
+    if (res.ok) {
+      const data = await res.json();
+      return (data.news || []).map((n: any) => ({
+        ...n,
+        // Ensure standard types for the UI logic
+        type: n.fuente.includes('GDELT') ? 'intel' : 'news',
+        urgente: n.fuente.includes('GDELT')
+      }));
     }
   } catch (e) {
     console.error('News service error:', e);
