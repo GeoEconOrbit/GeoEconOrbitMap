@@ -222,6 +222,11 @@ async function startServer() {
         .filter((v, i, a) => a.findIndex(t => (t.id === v.id)) === i);
 
       res.json({ news: uniqueResults });
+    } catch (error) {
+      res.status(500).json({ news: [] });
+    }
+  });
+
   app.get("/api/flights", async (req, res) => {
     try {
       // Global bounding box for high-level saturation
