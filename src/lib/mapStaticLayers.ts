@@ -58,25 +58,29 @@ export const renderStaticLayers = (
   });
 
   // Bases
+  const basesCluster = layers.bases as L.MarkerClusterGroup;
   MILITARY_BASES.forEach(base => {
     const icon = L.divIcon({
       className: 'custom-div-icon',
       html: iconTheme === 'emoji'
         ? `<div class="text-lg drop-shadow-[0_0_5px_rgba(239,64,76,0.6)]">🛡️</div>`
         : iconTheme === 'tactical'
-          ? `<div class="w-2.5 h-2.5 bg-red-500 border border-white rounded-sm"></div>`
-          : `<div class="w-1.5 h-1.5 border border-luxury-gold bg-luxury-gold/50 rotate-45"></div>`,
+          ? `<div class="w-2.5 h-2.5 bg-red-500 border border-white rounded-sm shadow-[0_0_8px_rgba(239,68,76,0.4)]"></div>`
+          : `<div class="w-1.5 h-1.5 border border-luxury-gold bg-luxury-gold/50 rotate-45 shadow-[0_0_5px_rgba(212,175,55,0.3)]"></div>`,
       iconSize: [20, 20]
     });
     L.marker([base.p[1], base.p[0]], { icon })
       .bindPopup(`
         <div class="p-2">
-          <h3 class="font-bold text-intel-gold">${base.n}</h3>
-          <p class="text-xs opacity-80 mb-1">${base.co} | ${base.t}</p>
-          <p class="text-sm">${base.d}</p>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+            <h3 class="font-bold text-intel-gold underline decoration-red-500/30">${base.n}</h3>
+          </div>
+          <p class="text-[10px] opacity-60 mb-1 tracking-widest uppercase">${base.co} | ${base.t}</p>
+          <p class="text-xs leading-relaxed border-t border-white/5 pt-1 mt-1">${base.d}</p>
         </div>
       `)
-      .addTo(layers.bases);
+      .addTo(basesCluster);
   });
 
   // Chokepoints
@@ -236,33 +240,51 @@ export const renderStaticLayers = (
   });
 
   // Nuclear Sites
+  const nuclearCluster = layers.nuclear as L.MarkerClusterGroup;
   NUCLEAR_SITES.forEach(site => {
     const icon = L.divIcon({
       className: 'custom-div-icon',
-      html: `<div class="text-2xl drop-shadow-[0_0_8px_rgba(255,255,0,0.8)]">☢️</div>`,
+      html: `<div class="text-xl drop-shadow-[0_0_8px_rgba(255,255,0,0.8)] filter grayscale-[0.3] hover:grayscale-0 transition-all hover:scale-110">☢️</div>`,
       iconSize: [32, 32]
     });
     
+    let radiusCircle: L.Circle | null = null;
+    if (site.r > 0) {
+      radiusCircle = L.circle([site.p[1], site.p[0]], {
+        radius: site.r * 1000,
+        color: '#e9c349',
+        weight: 1.5,
+        fillColor: '#e9c349',
+        fillOpacity: 0.1,
+        dashArray: '10, 10'
+      });
+    }
+
     const marker = L.marker([site.p[1], site.p[0]], { icon })
       .bindPopup(`
         <div class="p-2">
-          <h3 class="font-bold text-yellow-400 mb-1">${site.name}</h3>
-          <p class="text-xs opacity-80 mb-1">${site.co} | ${site.t}</p>
-          <p class="text-sm">${site.d}</p>
-          ${site.r > 0 ? `<p class="text-[10px] mt-2 text-yellow-400/60 uppercase tracking-widest">Strike Radius: ${site.r}km</p>` : ''}
+          <h3 class="font-bold text-yellow-400 mb-1 border-b border-yellow-400/20 pb-1">${site.name}</h3>
+          <p class="text-[10px] opacity-60 mb-2 tracking-tighter uppercase">${site.co} | ${site.t}</p>
+          <p class="text-xs leading-relaxed mb-2">${site.d}</p>
+          ${site.r > 0 ? `<div class="bg-yellow-400/10 p-1.5 rounded border border-yellow-400/20"><p class="text-[9px] text-yellow-400 uppercase font-bold tracking-widest">Strike Radius: ${site.r}km</p></div>` : ''}
         </div>
-      `)
-      .addTo(layers.nuclear);
+      `);
+    
+    marker.on('mouseover', () => {
+      const map = (layers.nuclear as any)._map;
+      if (radiusCircle && map) {
+        radiusCircle.addTo(map);
+      }
+    });
 
-    if (site.r > 0) {
-      L.circle([site.p[1], site.p[0]], {
-        radius: site.r * 1000,
-        color: '#e9c349',
-        weight: 1,
-        fillOpacity: 0.05,
-        dashArray: '5, 5'
-      }).addTo(layers.nuclear);
-    }
+    marker.on('mouseout', () => {
+      const map = (layers.nuclear as any)._map;
+      if (radiusCircle && map) {
+        map.removeLayer(radiusCircle);
+      }
+    });
+
+    marker.addTo(nuclearCluster);
   });
 
   // Cyber Attacks

@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
+import fs from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,6 +17,38 @@ async function startServer() {
   // WebSocket Server
   const wss = new WebSocketServer({ noServer: true });
   const messages: any[] = [];
+  
+  // Persistent Statistics
+  let totalVisits = 0;
+  const statsFile = path.join(process.cwd(), "visits.json");
+  
+  try {
+    if (fs.existsSync(statsFile)) {
+      const data = JSON.parse(fs.readFileSync(statsFile, "utf-8"));
+      totalVisits = data.total || 0;
+    }
+  } catch (e) {
+    console.error("Error reading visits.json", e);
+  }
+
+  const saveStats = () => {
+    try {
+      fs.writeFileSync(statsFile, JSON.stringify({ total: totalVisits }));
+    } catch (e) {}
+  };
+
+  const broadcastStats = () => {
+    const data = JSON.stringify({ 
+      type: "stats", 
+      data: { 
+        online: wss.clients.size,
+        total: totalVisits
+      } 
+    });
+    wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) client.send(data);
+    });
+  };
 
   server.on("upgrade", (request, socket, head) => {
     const { pathname } = new URL(request.url || "", `http://${request.headers.host}`);
@@ -27,7 +60,12 @@ async function startServer() {
   });
 
   wss.on("connection", (ws) => {
+    totalVisits++;
+    saveStats();
+    
     ws.send(JSON.stringify({ type: "history", data: messages }));
+    broadcastStats();
+
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString());
@@ -41,6 +79,10 @@ async function startServer() {
           });
         }
       } catch (e) {}
+    });
+
+    ws.on("close", () => {
+      broadcastStats();
     });
   });
 

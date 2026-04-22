@@ -130,6 +130,7 @@ export default function App() {
   const [milAircraft, setMilAircraft] = useState<Aircraft[]>([]);
   const [newsFeed, setNewsFeed] = useState<NewsItem[]>([]);
   const [currentTime, setCurrentTime] = useState(new Date().toUTCString());
+  const [globalStats, setGlobalStats] = useState({ online: 0, total: 0 });
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [countryPanelOpen, setCountryPanelOpen] = useState(false);
   const [riskLevel, setRiskLevel] = useState<'LOW' | 'ELEVATED' | 'HIGH' | 'CRITICAL'>('LOW');
@@ -149,6 +150,13 @@ export default function App() {
     { label: 'COPPER', price: '4.52', change: '-0.4%', up: false },
     { label: 'WHEAT', price: '612', change: '+2.1%', up: true }
   ]);
+
+  // Memoize static layer metadata to avoid expensive re-calcs
+  const staticLayerMetadata = React.useMemo(() => ({
+    ships: LIVE_SHIPS.length,
+    bases: MILITARY_BASES.length,
+    nuclear: NUCLEAR_SITES.length
+  }), []);
 
   const triggerMapPing = () => {
     setMapPing(true);
@@ -274,7 +282,11 @@ export default function App() {
       civil_air: L.markerClusterGroup({ showCoverageOnHover: false }).addTo(map),
       mil_air: L.layerGroup().addTo(map),
       warships: L.layerGroup().addTo(map),
-      bases: L.layerGroup().addTo(map),
+      bases: L.markerClusterGroup({ 
+        showCoverageOnHover: false,
+        maxClusterRadius: 40,
+        spiderfyOnMaxZoom: true 
+      }).addTo(map),
       oil: L.layerGroup(),
       wheat: L.layerGroup(),
       chokepoints: L.layerGroup().addTo(map),
@@ -284,11 +296,14 @@ export default function App() {
       resources: L.layerGroup(),
       ideology: L.layerGroup(),
       live_ships: L.layerGroup().addTo(map),
-      nuclear: L.layerGroup(),
+      nuclear: L.markerClusterGroup({ 
+        showCoverageOnHover: false,
+        maxClusterRadius: 35
+      }).addTo(map),
       cyber: L.layerGroup(),
       satellites: L.layerGroup(),
       cables: L.layerGroup(),
-      fabs: L.layerGroup(),
+      fabs: L.markerClusterGroup({ showCoverageOnHover: false }).addTo(map),
       space: L.layerGroup(),
       sanctions: L.layerGroup(),
       trade_flows: L.layerGroup(),
@@ -371,6 +386,8 @@ export default function App() {
             setChatMessages(msg.data);
           } else if (msg.type === 'chat') {
             setChatMessages(prev => [...prev, msg.data].slice(-100));
+          } else if (msg.type === 'stats') {
+            setGlobalStats(msg.data);
           }
         } catch (e) {
           console.error('WS parse error', e);
@@ -422,7 +439,7 @@ export default function App() {
     fetchNews();
     fetchAircraft();
     updateLiveShips();
-  }, [iconTheme]);
+  }, [iconTheme]); // Only trigger when theme explicitly changes
 
   const renderStaticLayersFn = useCallback(() => {
     if (!layersRef.current.trade_flows || !layersRef.current.sanctions) return;
@@ -801,10 +818,14 @@ export default function App() {
 
         {/* Center: Stats */}
         <div className="hidden md:flex items-center gap-6 text-[11px] font-medium">
+          <div className="flex items-center gap-2 text-geo-text-dim border-r border-geo-border pr-6 mr-1">
+            <div className="flex items-center gap-1.5"><Users size={12} className="text-geo-accent" /> <span>{globalStats.online}</span> <span className="text-[9px] text-geo-text-muted">online</span></div>
+            <div className="flex items-center gap-1.5 ml-3"><Activity size={12} className="text-geo-accent/60" /> <span>{globalStats.total}</span> <span className="text-[9px] text-geo-text-muted">visits</span></div>
+          </div>
           <div className="flex items-center gap-2 text-geo-text-dim"><Globe size={13} /> <span>{stats.news}</span> <span className="text-[9px] text-geo-text-muted">intel</span></div>
           <div className="flex items-center gap-2 text-geo-danger font-bold"><Flame size={13} /> <span>{stats.attacks}</span> <span className="text-[9px] font-normal text-geo-text-muted">kinetic</span></div>
           <div className="flex items-center gap-2 text-geo-text-dim"><Plane size={13} /> <span>{stats.aircraft}</span> <span className="text-[9px] text-geo-text-muted">air</span></div>
-          <div className="flex items-center gap-2 text-geo-text-dim"><Ship size={13} /> <span>{LIVE_SHIPS.length}</span> <span className="text-[9px] text-geo-text-muted">sea</span></div>
+          <div className="flex items-center gap-2 text-geo-text-dim"><Ship size={13} /> <span>{staticLayerMetadata.ships}</span> <span className="text-[9px] text-geo-text-muted">sea</span></div>
         </div>
 
         {/* Right: Actions */}
